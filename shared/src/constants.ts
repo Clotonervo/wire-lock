@@ -69,6 +69,16 @@ export const MAX_PITCH = Math.PI / 2 - 0.01;
 /** Players falling below this height are respawned. */
 export const KILL_Y = -20;
 
+export const MAX_HEALTH = 100;
+
+// --- Rounds and players (DESIGN.md §5.2, §8, §12) ---
+
+/** A player with no applied input for this long is marked away and taken out of the world. */
+export const AWAY_TIMEOUT_MS = 8000;
+/** How long the end-of-round screen shows before the next round starts. */
+export const ROUND_END_DELAY_MS = 8000;
+export const MAX_NAME_LENGTH = 16;
+
 // --- Collision ---
 
 /** Gap kept between a player and the surfaces they touch, to avoid float-precision snagging. */
