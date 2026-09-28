@@ -6,7 +6,9 @@ export const pistol: WeaponDef = {
   kind: "hitscan",
   fireIntervalMs: 250,
   damage: 25,
+  magazine: 12,
+  reloadMs: 1100,
   spreadRad: 0.004,
   range: 100,
-  view: { model: "pistol", color: "#2a2a2a" },
+  view: { model: "pistol", color: "#2a2a2a", sound: "pistol" },
 };

@@ -21,6 +21,8 @@ export interface InputCmd {
   pitch: number;
   fire: boolean;
   altFire: boolean;
+  reload: boolean;
+  /** Switch to this slot (0-based); only sent on the tick the player asks to switch. */
   weaponSlot?: number;
 }
 

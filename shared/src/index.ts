@@ -9,3 +9,6 @@ export * from "./random";
 export * from "./weapons";
 export * from "./modes";
 export type * from "./messages";
+export * from "./arms";
+export * from "./projectile";
+export * from "./playerStep";

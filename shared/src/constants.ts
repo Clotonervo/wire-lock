@@ -70,6 +70,10 @@ export const MAX_PITCH = Math.PI / 2 - 0.01;
 export const KILL_Y = -20;
 
 export const MAX_HEALTH = 100;
+/** Splash damage from your own explosions is scaled by this (rocket jumps cost some health, not all of it). */
+export const SELF_BLAST_DAMAGE_SCALE = 0.4;
+/** Delay before a newly selected weapon can fire. */
+export const WEAPON_SWITCH_MS = 200;
 
 // --- Rounds and players (DESIGN.md §5.2, §8, §12) ---
 
