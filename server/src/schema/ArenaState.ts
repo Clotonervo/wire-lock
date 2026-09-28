@@ -7,6 +7,8 @@ import { schema, t, type SchemaType } from "@colyseus/schema";
  */
 export const PlayerState = schema(
   {
+    name: t.string(),
+    color: t.string(),
     x: t.float64(),
     y: t.float64(),
     z: t.float64(),
@@ -16,18 +18,35 @@ export const PlayerState = schema(
     onGround: t.boolean(),
     yaw: t.number(),
     pitch: t.number(),
-    color: t.string(),
     lastProcessedSeq: t.number(),
+    health: t.uint8(),
+    alive: t.boolean(),
+    /** Out of the world after AWAY_TIMEOUT_MS without input; back on their next input. */
+    away: t.boolean(),
+    /** Server tick at which a dead player respawns; 0 when not waiting to respawn. */
+    respawnTick: t.number(),
+    weapon: t.string(),
+    kills: t.uint16(),
+    deaths: t.uint16(),
   },
   "PlayerState",
 );
 export type PlayerState = SchemaType<typeof PlayerState>;
 
+export type RoundPhase = "waiting" | "playing" | "ended";
+
 export const ArenaState = schema(
   {
     mapId: t.string(),
+    modeId: t.string(),
     /** Server simulation tick counter. */
     tick: t.number(),
+    /** RoundPhase: warm-up until enough players, then playing, then the end-of-round screen. */
+    phase: t.string(),
+    /** Tick at which the current phase ends (round timer / end screen); 0 = no timer. */
+    phaseEndTick: t.number(),
+    /** Winner of the last round (session id), or empty for a draw / no round yet. */
+    winner: t.string(),
     players: t.map(PlayerState),
   },
   "ArenaState",

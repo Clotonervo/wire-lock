@@ -1,31 +1,63 @@
 import { Room, type Client } from "@colyseus/core";
 import {
+  AWAY_TIMEOUT_MS,
   DEFAULT_MAP_ID,
+  DEFAULT_MODE_ID,
   INPUT_BACKLOG,
   KILL_Y,
+  MAX_HEALTH,
   MAX_INPUTS_PER_TICK,
   MAX_INPUT_BATCH,
   MAX_INPUT_QUEUE,
   MAX_MESSAGES_PER_SECOND,
   MAX_PLAYERS_PER_ROOM,
   PATCH_RATE_MS,
+  ROUND_END_DELAY_MS,
   TICK_DT,
+  TICK_MS,
   TICK_RATE_HZ,
+  aimDirection,
+  applySpread,
+  eyePosition,
   getMap,
+  getWeapon,
+  seededRng,
   stepPlayer,
 } from "@wire-lock/shared";
-import type { InputCmd, MapDef, PlayerMoveState, SpawnPoint } from "@wire-lock/shared";
+import type {
+  InputCmd,
+  MapDef,
+  PlayerMoveState,
+  ServerMessages,
+  ServerMessageType,
+  SpawnPoint,
+  Vec3,
+  WeaponApi,
+  WeaponDef,
+} from "@wire-lock/shared";
+import { config } from "../config";
 import { log } from "../log";
-import { ArenaState, PlayerState } from "../schema/ArenaState";
+import { ArenaState, PlayerState, type RoundPhase } from "../schema/ArenaState";
+import { resolveHitscan } from "../sim/hitscan";
+import { createMode, type GameMode, type ModeRoom } from "../sim/modes";
+import { sanitizeName } from "../sim/names";
 import { sanitizeInput } from "../sim/validateInput";
 
 const PLAYER_COLORS = ["#e6194b", "#3cb44b", "#ffe119", "#4363d8", "#f58231", "#911eb4", "#46f0f0", "#f032e6"];
+/** Kills by falling out of the world are credited to this weapon id. */
+const WORLD_KILL = "world";
 
 /** Server-only per-player data that isn't synced. */
 interface PlayerRuntime {
   queue: InputCmd[];
   /** Highest seq accepted into the queue, to drop duplicates and out-of-order commands. */
   lastQueuedSeq: number;
+  /** Tick of the last applied input, for away detection. */
+  lastInputTick: number;
+  /** Inputs applied so far. Fire rate is measured in these, not client seqs (which a cheat could skip). */
+  inputsApplied: number;
+  /** `inputsApplied` when this player last fired. */
+  lastFireInput: number;
 }
 
 export class ArenaRoom extends Room<{ state: ArenaState }> {
@@ -34,9 +66,11 @@ export class ArenaRoom extends Room<{ state: ArenaState }> {
   override maxMessagesPerSecond = MAX_MESSAGES_PER_SECOND;
 
   private map!: MapDef;
+  private mode!: GameMode;
   private runtime = new Map<string, PlayerRuntime>();
-  private nextSpawn = 0;
   private nextColor = 0;
+  private nextPlayerNumber = 1;
+  private shotSeed = 1;
 
   override messages = {
     input: (client: Client, payload: unknown) => this.receiveInputs(client, payload),
@@ -44,34 +78,59 @@ export class ArenaRoom extends Room<{ state: ArenaState }> {
 
   override onCreate() {
     const map = getMap(DEFAULT_MAP_ID);
-    if (!map) throw new Error(`unknown map ${DEFAULT_MAP_ID}`);
+    const mode = createMode(DEFAULT_MODE_ID, config.killLimit ? { scoreLimit: config.killLimit } : {});
+    if (!map || !mode) throw new Error(`unknown map ${DEFAULT_MAP_ID} or mode ${DEFAULT_MODE_ID}`);
     this.map = map;
+    this.mode = mode;
 
-    this.state = new ArenaState({ mapId: map.id, tick: 0 });
+    this.state = new ArenaState({
+      mapId: map.id,
+      modeId: mode.def.id,
+      tick: 0,
+      phase: "waiting" satisfies RoundPhase,
+      phaseEndTick: 0,
+      winner: "",
+    });
     // Accumulator-based, so the long-run rate is exactly TICK_RATE_HZ (plain setInterval(33.3) drifts to ~29.4 Hz,
     // which makes client inputs pile up and forces catch-up steps that look like hitches to other players).
     this.setFixedTimestep(() => this.tick(), TICK_RATE_HZ);
-    log("room.create", { roomId: this.roomId, map: map.id });
+    log("room.create", { roomId: this.roomId, map: map.id, mode: mode.def.id, scoreLimit: mode.def.scoreLimit ?? 0 });
   }
 
-  override onJoin(client: Client) {
-    const spawn = this.pickSpawn();
+  override onJoin(client: Client, options?: { name?: unknown }) {
+    const id = client.sessionId;
     const player = new PlayerState({
-      x: spawn.pos.x,
-      y: spawn.pos.y,
-      z: spawn.pos.z,
+      name: sanitizeName(options?.name, `Player ${this.nextPlayerNumber++}`),
+      color: PLAYER_COLORS[this.nextColor++ % PLAYER_COLORS.length] ?? "#ffffff",
+      x: 0,
+      y: 0,
+      z: 0,
       vx: 0,
       vy: 0,
       vz: 0,
       onGround: false,
-      yaw: spawn.yaw,
+      yaw: 0,
       pitch: 0,
-      color: PLAYER_COLORS[this.nextColor++ % PLAYER_COLORS.length] ?? "#ffffff",
       lastProcessedSeq: -1,
+      health: 0,
+      alive: false,
+      away: false,
+      respawnTick: 0,
+      weapon: "",
+      kills: 0,
+      deaths: 0,
     });
-    this.state.players.set(client.sessionId, player);
-    this.runtime.set(client.sessionId, { queue: [], lastQueuedSeq: -1 });
-    log("room.join", { roomId: this.roomId, sessionId: client.sessionId, players: this.state.players.size });
+    this.state.players.set(id, player);
+    this.runtime.set(id, {
+      queue: [],
+      lastQueuedSeq: -1,
+      lastInputTick: this.state.tick,
+      inputsApplied: 0,
+      lastFireInput: -Infinity,
+    });
+    this.spawn(id, player);
+    this.mode.onPlayerJoin?.(this.modeRoom(), id);
+    log("room.join", { roomId: this.roomId, sessionId: id, name: player.name, players: this.state.players.size });
   }
 
   override onLeave(client: Client) {
@@ -83,6 +142,8 @@ export class ArenaRoom extends Room<{ state: ArenaState }> {
   override onDispose() {
     log("room.dispose", { roomId: this.roomId });
   }
+
+  // --- Input -------------------------------------------------------------
 
   private receiveInputs(client: Client, payload: unknown) {
     const rt = this.runtime.get(client.sessionId);
@@ -98,36 +159,244 @@ export class ArenaRoom extends Room<{ state: ArenaState }> {
     if (rt.queue.length > MAX_INPUT_QUEUE) rt.queue.splice(0, rt.queue.length - MAX_INPUT_QUEUE);
   }
 
-  private tick() {
-    this.state.tick++;
+  // --- Simulation --------------------------------------------------------
 
-    this.state.players.forEach((player, sessionId) => {
-      const rt = this.runtime.get(sessionId);
+  private tick() {
+    const tick = ++this.state.tick;
+
+    this.state.players.forEach((player, id) => {
+      const rt = this.runtime.get(id);
       if (!rt) return;
+
+      if (!player.away && (tick - rt.lastInputTick) * TICK_MS > AWAY_TIMEOUT_MS) this.goAway(id, player);
+      if (!player.alive && !player.away && player.respawnTick > 0 && tick >= player.respawnTick) this.spawn(id, player);
 
       // Players only move when their inputs arrive, so client prediction replays exactly.
       const count = rt.queue.length > INPUT_BACKLOG ? MAX_INPUTS_PER_TICK : 1;
-      const inputs = rt.queue.splice(0, count);
-      if (inputs.length === 0) return;
+      for (const cmd of rt.queue.splice(0, count)) this.applyInput(id, player, rt, cmd);
 
-      let move = readMove(player);
-      for (const cmd of inputs) {
-        move = stepPlayer(move, cmd, this.map, TICK_DT);
-        player.yaw = cmd.yaw;
-        player.pitch = cmd.pitch;
-        player.lastProcessedSeq = cmd.seq;
-      }
-      writeMove(player, move);
-
-      if (player.y < KILL_Y) placeAt(player, this.pickSpawn());
+      if (player.alive && player.y < KILL_Y) this.killPlayer(id, null, WORLD_KILL);
     });
+
+    this.mode.onTick?.(this.modeRoom(), TICK_DT);
+    this.updateRound();
   }
 
-  private pickSpawn(): SpawnPoint {
-    const spawns = this.map.spawns;
-    const spawn = spawns[this.nextSpawn++ % spawns.length];
-    if (!spawn) throw new Error(`map ${this.map.id} has no spawns`);
-    return spawn;
+  private applyInput(id: string, player: PlayerState, rt: PlayerRuntime, cmd: InputCmd) {
+    rt.lastInputTick = this.state.tick;
+    rt.inputsApplied++;
+    if (player.away) {
+      player.away = false;
+      this.spawn(id, player);
+      log("player.back", { sessionId: id });
+    }
+
+    player.lastProcessedSeq = cmd.seq;
+    player.yaw = cmd.yaw;
+    player.pitch = cmd.pitch;
+    if (!player.alive) return;
+
+    writeMove(player, stepPlayer(readMove(player), cmd, this.map, TICK_DT));
+    if (cmd.fire && this.state.phase !== "ended") this.tryFire(id, player, rt);
+  }
+
+  private tryFire(id: string, player: PlayerState, rt: PlayerRuntime) {
+    const weapon = getWeapon(player.weapon);
+    if (!weapon || weapon.kind !== "hitscan") return;
+    if ((rt.inputsApplied - rt.lastFireInput) * TICK_MS < weapon.fireIntervalMs) return;
+    rt.lastFireInput = rt.inputsApplied;
+
+    const origin = eyePosition({ x: player.x, y: player.y, z: player.z });
+    const aim = aimDirection(player.yaw, player.pitch);
+    const api = this.weaponApi(id, weapon.id);
+    weapon.onFire?.({ ...api, shooter: id, weaponId: weapon.id, origin, dir: aim });
+
+    const targets: { id: string; pos: Vec3 }[] = [];
+    this.state.players.forEach((p, pid) => {
+      if (pid !== id && p.alive) targets.push({ id: pid, pos: { x: p.x, y: p.y, z: p.z } });
+    });
+
+    const rng = seededRng(this.shotSeed++);
+    const ends: Vec3[] = [];
+    for (let i = 0; i < (weapon.pellets ?? 1); i++) {
+      const dir = applySpread(aim, weapon.spreadRad ?? 0, rng);
+      const shot = resolveHitscan(origin, dir, weapon.range ?? 0, this.map.boxes, targets);
+      ends.push(shot.end);
+      if (shot.target) this.applyHit(id, shot.target, weapon, shot.end, dir, api);
+    }
+
+    const shooter = this.clients.get(id);
+    this.broadcastEvent("fire", { shooter: id, weapon: weapon.id, ends }, shooter);
+  }
+
+  private applyHit(shooter: string, target: string, weapon: WeaponDef, point: Vec3, dir: Vec3, api: WeaponApi) {
+    if (weapon.damage > 0) api.damage(target, weapon.damage);
+    if (weapon.knockback) {
+      const k = weapon.knockback;
+      api.applyImpulse(target, { x: dir.x * k, y: dir.y * k, z: dir.z * k });
+    }
+    weapon.onHit?.({ ...api, shooter, target, weaponId: weapon.id, point, dir });
+  }
+
+  /** The narrow API weapon hooks get (DESIGN.md §7). */
+  private weaponApi(shooter: string, weaponId: string): WeaponApi {
+    const players = this.state.players;
+    return {
+      damage: (target, amount) => this.damage(target, amount, shooter, weaponId),
+      applyImpulse: (id, v) => {
+        const p = players.get(id);
+        if (!p?.alive) return;
+        p.vx += v.x;
+        p.vy += v.y;
+        p.vz += v.z;
+        if (v.y > 0) p.onGround = false;
+      },
+      teleport: (id, pos) => {
+        const p = players.get(id);
+        if (!p?.alive) return;
+        writeMove(p, { pos: { ...pos }, vel: { x: p.vx, y: p.vy, z: p.vz }, onGround: false });
+      },
+      swapPositions: (a, b) => {
+        const pa = players.get(a);
+        const pb = players.get(b);
+        if (!pa?.alive || !pb?.alive) return;
+        const ma = readMove(pa);
+        writeMove(pa, readMove(pb));
+        writeMove(pb, ma);
+      },
+      broadcastEffect: (name, data) => this.broadcast("effect", { name, data }),
+    };
+  }
+
+  private damage(targetId: string, amount: number, attackerId: string, weaponId: string) {
+    const target = this.state.players.get(targetId);
+    if (!target?.alive || amount <= 0) return;
+    target.health = Math.max(0, target.health - Math.round(amount));
+    const killed = target.health === 0;
+    const attacker = this.clients.get(attackerId);
+    if (attacker) this.sendEvent(attacker, "hit", { target: targetId, damage: amount, killed });
+    if (killed) this.killPlayer(targetId, attackerId, weaponId);
+  }
+
+  private killPlayer(victimId: string, killerId: string | null, weaponId: string) {
+    const victim = this.state.players.get(victimId);
+    if (!victim?.alive) return;
+    victim.alive = false;
+    victim.health = 0;
+    victim.respawnTick = this.state.tick + Math.ceil(this.mode.def.respawnDelayMs / TICK_MS);
+
+    const killer = killerId ?? victimId;
+    if (this.state.phase === "playing") {
+      victim.deaths++;
+      const k = this.state.players.get(killer);
+      if (k && killer !== victimId) k.kills++;
+    }
+    this.mode.onKill?.(this.modeRoom(), killer, victimId, weaponId);
+    this.broadcastEvent("kill", { killer, victim: victimId, weapon: weaponId });
+  }
+
+  private goAway(id: string, player: PlayerState) {
+    player.away = true;
+    player.alive = false;
+    player.respawnTick = 0;
+    log("player.away", { sessionId: id });
+  }
+
+  private spawn(id: string, player: PlayerState) {
+    const spawn: SpawnPoint = this.mode.pickSpawn(this.modeRoom(), id);
+    writeMove(player, { pos: { ...spawn.pos }, vel: { x: 0, y: 0, z: 0 }, onGround: false });
+    player.yaw = spawn.yaw;
+    player.pitch = 0;
+    player.health = MAX_HEALTH;
+    player.alive = true;
+    player.respawnTick = 0;
+    player.weapon = this.mode.loadout(this.modeRoom(), id)[0] ?? "";
+    const rt = this.runtime.get(id);
+    if (rt) rt.lastFireInput = -Infinity;
+  }
+
+  // --- Rounds ------------------------------------------------------------
+
+  private updateRound() {
+    const s = this.state;
+    const enough = this.activePlayerCount() >= this.mode.def.minPlayers;
+
+    switch (s.phase as RoundPhase) {
+      case "waiting":
+        if (enough) this.startRound();
+        break;
+      case "playing": {
+        if (!enough) {
+          s.phase = "waiting";
+          s.phaseEndTick = 0;
+          break;
+        }
+        const result = this.mode.checkWin(this.modeRoom());
+        if (result) this.endRound(result.winner ?? "");
+        break;
+      }
+      case "ended":
+        if (s.tick >= s.phaseEndTick) {
+          if (enough) this.startRound();
+          else {
+            s.phase = "waiting";
+            s.phaseEndTick = 0;
+            s.winner = "";
+          }
+        }
+        break;
+    }
+  }
+
+  private startRound() {
+    const s = this.state;
+    s.phase = "playing";
+    s.winner = "";
+    const roundTime = this.mode.def.roundTimeSec;
+    s.phaseEndTick = roundTime ? s.tick + Math.round(roundTime * TICK_RATE_HZ) : 0;
+    s.players.forEach((p, id) => {
+      p.kills = 0;
+      p.deaths = 0;
+      if (!p.away) this.spawn(id, p);
+    });
+    this.broadcastEvent("roundStart", {});
+    log("round.start", { roomId: this.roomId, players: this.activePlayerCount() });
+  }
+
+  private endRound(winner: string) {
+    const s = this.state;
+    s.phase = "ended";
+    s.winner = winner;
+    s.phaseEndTick = s.tick + Math.round(ROUND_END_DELAY_MS / TICK_MS);
+    this.broadcastEvent("roundEnd", { winner });
+    log("round.end", { roomId: this.roomId, winner: winner || "draw" });
+  }
+
+  private activePlayerCount(): number {
+    let n = 0;
+    this.state.players.forEach((p) => {
+      if (!p.away) n++;
+    });
+    return n;
+  }
+
+  private modeRoom(): ModeRoom {
+    const players: ModeRoom["players"][number][] = [];
+    this.state.players.forEach((p, id) => {
+      if (!p.away) players.push({ id, kills: p.kills, deaths: p.deaths, alive: p.alive, pos: { x: p.x, y: p.y, z: p.z } });
+    });
+    const s = this.state;
+    return { map: this.map, players, timeUp: s.phaseEndTick > 0 && s.tick >= s.phaseEndTick };
+  }
+
+  // --- Messaging ---------------------------------------------------------
+
+  private broadcastEvent<K extends ServerMessageType>(type: K, data: ServerMessages[K], except?: Client) {
+    this.broadcast(type, data, except ? { except } : undefined);
+  }
+
+  private sendEvent<K extends ServerMessageType>(client: Client, type: K, data: ServerMessages[K]) {
+    client.send(type, data);
   }
 }
 
@@ -143,10 +412,4 @@ function writeMove(p: PlayerState, m: PlayerMoveState) {
   p.vy = m.vel.y;
   p.vz = m.vel.z;
   p.onGround = m.onGround;
-}
-
-function placeAt(p: PlayerState, spawn: SpawnPoint) {
-  writeMove(p, { pos: { ...spawn.pos }, vel: { x: 0, y: 0, z: 0 }, onGround: false });
-  p.yaw = spawn.yaw;
-  p.pitch = 0;
 }

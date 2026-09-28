@@ -5,8 +5,8 @@ import type { Vec3 } from "./types";
  * lives in synced state instead.
  */
 export interface ServerMessages {
-  /** Someone else fired: draw their tracer. Not sent to the shooter, who drew it already. */
-  fire: { shooter: string; weapon: string; end: Vec3 };
+  /** Someone else fired: draw their tracers (one per pellet). Not sent to the shooter, who drew them already. */
+  fire: { shooter: string; weapon: string; ends: Vec3[] };
   /** Sent to the shooter when a shot lands, for the hitmarker. */
   hit: { target: string; damage: number; killed: boolean };
   kill: { killer: string; victim: string; weapon: string };
