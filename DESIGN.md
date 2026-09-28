@@ -115,7 +115,8 @@ wire-lock/
 ### 5.1 Tick rates
 - Server simulation: **30 Hz** fixed timestep (`TICK_MS = 1000/30`).
 - Server state patches: **20 Hz** (Colyseus `patchRate = 50`).
-- Client sends one input message per client simulation tick (30 Hz), batching if the tab lags.
+- Client sends one input message per client simulation tick (30 Hz), batching if the tab lags. In practice it sends one message per rendered frame containing every tick simulated that frame (`InputCmd[]`, at most `MAX_INPUT_BATCH`).
+- The server ticks with Colyseus `setFixedTimestep` (accumulator-based). Plain `setInterval(33.3)` runs at ~29.4 Hz on Node, which makes client inputs pile up.
 - Client renders at display refresh rate (`requestAnimationFrame`).
 
 ### 5.2 Input message
@@ -134,13 +135,15 @@ interface InputCmd {
 ```
 The server validates each command (clamp values, reject absurd `dt`, drop out-of-order `seq`) and records `lastProcessedSeq` per player in synced state.
 
+**Input pacing:** each player's valid commands go into a queue (capped at `MAX_INPUT_QUEUE`, oldest dropped). Each tick the server applies **one** command per player, or `MAX_INPUTS_PER_TICK` (2) once more than `INPUT_BACKLOG` are queued. This acts as a small jitter buffer: a client sending bursts (e.g. two inputs per frame at 15 fps) still moves smoothly for everyone else, and the catch-up cap limits speed hacks to 2×. A player only moves when one of their commands is applied. The client keeps sending idle commands while nothing is pressed, but a player whose tab is hidden (no `requestAnimationFrame`) freezes in place, even mid-air.
+
 ### 5.3 Client-side prediction and reconciliation
 1. Each client tick: sample input, assign `seq`, send it, apply it locally via `shared/movement.ts`, and push it onto a `pendingInputs` buffer.
 2. When server state arrives for the local player: set the local state to the server's authoritative state, drop all pending inputs with `seq <= lastProcessedSeq`, then **re-apply** the remaining pending inputs.
 3. Smooth small corrections visually (lerp the camera offset over ~100 ms). Snap on large errors (> 1 unit).
 
 ### 5.4 Interpolation of remote entities
-- Keep a buffer of timestamped snapshots per remote player.
+- Keep a buffer of timestamped snapshots per remote player. Timestamps are **server time** (`state.tick × TICK_MS`), not arrival time. Patches are 50 ms apart but carry 1 or 2 ticks of movement, so arrival timestamps make remote speed wobble by ±33%. The client maps local time to server time with a smoothed offset (`client/src/net/serverClock.ts`).
 - Render remote players at `now - INTERP_DELAY` (start at **100 ms**), lerping position and slerping yaw between the two surrounding snapshots.
 - Extrapolate for at most 1 tick if the buffer runs dry, then freeze.
 
@@ -152,6 +155,7 @@ The server validates each command (clamp values, reject absurd `dt`, drop out-of
 
 ### 5.6 Events vs state
 - **Synced state (Colyseus Schema):** players (position, yaw, pitch, health, weapon, alive, score, lastProcessedSeq), projectiles, pickups, mode/round state.
+- Position and velocity are `t.float64()`. `t.number()` silently sends floats as float32 when the error is < 1e-4, which breaks exact reconciliation (the client re-simulates from the server's state).
 - **One-off messages (broadcast):** `hit`, `kill`, `fire` (for other clients' cosmetics), `roundStart`, `roundEnd`, `chat`.
 
 ---
@@ -291,7 +295,7 @@ Each milestone should end with the game in a runnable state and the acceptance c
 - Pointer lock, WASD, mouse look, jump.
 - Inputs sent to server; server simulates at 30 Hz; client prediction + reconciliation; remote interpolation.
 - F3 debug overlay.
-- ✅ Two browser tabs see each other move smoothly. With 150 ms simulated latency (Colyseus's built-in `COLYSEUS_LATENCY=150` env var on the server, or Chrome devtools throttling), local movement still feels instant and remote players don't stutter.
+- ✅ **Done.** Two browser tabs see each other move smoothly. With 150 ms simulated latency (`pnpm dev:lag`) (Colyseus's built-in `COLYSEUS_LATENCY=150` env var on the server, or Chrome devtools throttling), local movement still feels instant and remote players don't stutter.
 
 ### M2 — Shoot each other (Deathmatch)
 - Weapon system with Pistol, health, damage, death, respawn with delay.
@@ -346,3 +350,4 @@ Each milestone should end with the game in a runnable state and the acceptance c
 - Server region: pick the one closest to where most players will be.
 - Should rooms be public (listed) or private (code-only) in v1? Default: code-only.
 - Is audio in scope for M3, or deferred?
+- Players freeze when their tab is hidden (see §5.2 input pacing). Should the server instead apply idle input after a timeout, so they fall and stay hittable? The catch is that the client must then reconcile against inputs it never sent.

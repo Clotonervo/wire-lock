@@ -10,6 +10,7 @@ Requires Node 24+ and pnpm (`npm i -g pnpm`).
 
 - `pnpm install` — install all workspace deps
 - `pnpm dev` — server (`ws://localhost:2567`, tsx watch) + client (`http://localhost:5173`, Vite) together
+- `pnpm dev:lag` — same, with 150 ms simulated round-trip latency (server `--latency=<ms>` flag)
 - `pnpm build` — typecheck and build all packages (`server/dist`, `client/dist`)
 - `pnpm test` — Vitest (shared simulation tests live in `shared/test/`)
 - `pnpm lint` — ESLint + `tsc` typecheck in every package
@@ -26,3 +27,11 @@ Requires Node 24+ and pnpm (`npm i -g pnpm`).
 - Colyseus 0.18 state uses `schema({...}, "Name")` + `t.*` builders, not decorators.
 - Colyseus 0.18 has built-in simulated latency (`COLYSEUS_LATENCY` env / `applySimulatedLatency`), handy for the M1 latency test.
 - pnpm build scripts are allow-listed in `pnpm-workspace.yaml` (`allowBuilds`).
+- Schema `t.number()` is lossy for floats (float32 if error < 1e-4). Use `t.float64()` for anything the client re-simulates from.
+- Use `setFixedTimestep`, not `setSimulationInterval`, for the sim loop (the latter drifts below 30 Hz).
+
+## Testing netcode
+
+- F3 in the client shows fps, ping, pending inputs, server tick and prediction correction. Correction should stay ~0; anything larger means client and server simulations diverged.
+- In dev builds the `Game` instance is `window.game`, which is handy for scripted checks: set `game.input.locked = true` and dispatch `KeyboardEvent`s to move without pointer lock.
+- Background tabs don't run `requestAnimationFrame`, so they don't simulate or send input.
