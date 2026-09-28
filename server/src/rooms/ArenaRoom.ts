@@ -86,6 +86,7 @@ export class ArenaRoom extends Room<{ state: ArenaState }> {
     this.state = new ArenaState({
       mapId: map.id,
       modeId: mode.def.id,
+      scoreLimit: mode.def.scoreLimit ?? 0,
       tick: 0,
       phase: "waiting" satisfies RoundPhase,
       phaseEndTick: 0,

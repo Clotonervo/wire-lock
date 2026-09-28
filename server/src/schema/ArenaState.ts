@@ -39,6 +39,8 @@ export const ArenaState = schema(
   {
     mapId: t.string(),
     modeId: t.string(),
+    /** Kills that win the round (the mode's limit, or the --kill-limit override); 0 = none. */
+    scoreLimit: t.uint16(),
     /** Server simulation tick counter. */
     tick: t.number(),
     /** RoundPhase: warm-up until enough players, then playing, then the end-of-round screen. */
