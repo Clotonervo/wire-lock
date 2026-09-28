@@ -37,6 +37,8 @@ export interface Box {
   min: Vec3;
   max: Vec3;
   color?: string;
+  /** Collides but isn't drawn (e.g. clip walls that stop rocket jumps leaving the map). */
+  invisible?: boolean;
 }
 
 export interface SpawnPoint {

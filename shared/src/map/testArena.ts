@@ -8,10 +8,16 @@ const PLATFORM = "#4f7a9a";
 const HALF = 20;
 const WALL_HEIGHT = 4;
 const WALL_THICKNESS = 1;
+/** Invisible walls continue up to here, so rocket jumps can't clear the visible ones. */
+const CLIP_HEIGHT = 60;
 const SPAWN_INSET = 16;
 
 function box(minX: number, minY: number, minZ: number, maxX: number, maxY: number, maxZ: number, color: string): Box {
   return { min: { x: minX, y: minY, z: minZ }, max: { x: maxX, y: maxY, z: maxZ }, color };
+}
+
+function clip(minX: number, minY: number, minZ: number, maxX: number, maxY: number, maxZ: number): Box {
+  return { min: { x: minX, y: minY, z: minZ }, max: { x: maxX, y: maxY, z: maxZ }, invisible: true };
 }
 
 /** A spawn on the floor, facing the centre of the arena. */
@@ -31,6 +37,11 @@ export const testArena: MapDef = {
     box(-HALF - WALL_THICKNESS, 0, HALF, HALF + WALL_THICKNESS, WALL_HEIGHT, HALF + WALL_THICKNESS, WALL),
     box(-HALF - WALL_THICKNESS, 0, -HALF, -HALF, WALL_HEIGHT, HALF, WALL),
     box(HALF, 0, -HALF, HALF + WALL_THICKNESS, WALL_HEIGHT, HALF, WALL),
+    // Clip walls above them
+    clip(-HALF - WALL_THICKNESS, WALL_HEIGHT, -HALF - WALL_THICKNESS, HALF + WALL_THICKNESS, CLIP_HEIGHT, -HALF),
+    clip(-HALF - WALL_THICKNESS, WALL_HEIGHT, HALF, HALF + WALL_THICKNESS, CLIP_HEIGHT, HALF + WALL_THICKNESS),
+    clip(-HALF - WALL_THICKNESS, WALL_HEIGHT, -HALF, -HALF, CLIP_HEIGHT, HALF),
+    clip(HALF, WALL_HEIGHT, -HALF, HALF + WALL_THICKNESS, CLIP_HEIGHT, HALF),
     // Crates
     box(-6, 0, -6, -4, 1, -4, CRATE),
     box(4, 0, 4, 6, 1, 6, CRATE),
