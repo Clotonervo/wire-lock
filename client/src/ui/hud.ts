@@ -9,6 +9,8 @@ export interface HudView {
   alive: boolean;
   weaponName: string;
   ammo: string;
+  /** The loadout, in slot order, for the weapon bar. */
+  slots: { name: string; active: boolean }[];
   /** Top-centre line: round timer or phase message. */
   roundText: string;
   roundSub: string;
@@ -21,6 +23,10 @@ export interface HudView {
 export class Hud {
   private readonly health = el("div", "hud-health");
   private readonly weapon = el("div", "hud-weapon");
+  private readonly weaponName = el("div", "hud-weapon-name");
+  private readonly ammo = el("div", "hud-ammo");
+  private readonly slots = el("div", "hud-slots");
+  private slotsKey = "";
   private readonly round = el("div", "hud-round");
   private readonly roundSub = el("div", "hud-round-sub");
   private readonly feed = el("ul", "hud-feed");
@@ -32,18 +38,27 @@ export class Hud {
   private damageTimer: number | undefined;
 
   constructor(root: HTMLElement) {
+    this.weapon.append(this.weaponName, this.ammo);
     const top = el("div", "hud-top");
     top.append(this.round, this.roundSub);
     const middle = el("div", "hud-middle");
     middle.append(this.center, this.centerSub);
-    root.append(this.damage, top, this.feed, middle, this.health, this.weapon);
+    root.append(this.damage, top, this.feed, middle, this.health, this.slots, this.weapon);
     this.crosshair = document.getElementById("crosshair");
   }
 
   update(v: HudView): void {
     setText(this.health, v.alive ? String(v.health) : "");
     this.health.classList.toggle("low", v.alive && v.health <= LOW_HEALTH);
-    setText(this.weapon, v.alive ? `${v.weaponName}  ${v.ammo}` : "");
+    setText(this.weaponName, v.alive ? v.weaponName : "");
+    setText(this.ammo, v.alive ? v.ammo : "");
+    const slotsKey = v.alive ? JSON.stringify(v.slots) : "";
+    if (slotsKey !== this.slotsKey) {
+      this.slotsKey = slotsKey;
+      this.slots.replaceChildren(
+        ...(v.alive ? v.slots : []).map((s, i) => span(s.active ? "slot active" : "slot", `${i + 1} ${s.name}`)),
+      );
+    }
     setText(this.round, v.roundText);
     setText(this.roundSub, v.roundSub);
     setText(this.center, v.centerText);

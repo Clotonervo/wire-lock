@@ -1,30 +1,34 @@
 import {
   CORRECTION_SMOOTH_MS,
   CORRECTION_SNAP_DISTANCE,
+  INFINITE_AMMO,
   INTERP_DELAY_MS,
   PLAYER_EYE_HEIGHT,
   TICK_DT,
   TICK_MS,
-  aimDirection,
-  eyePosition,
+  applySpread,
+  currentWeapon,
   getMode,
   getWeapon,
   lerp,
+  lerpVec3,
   playerBox,
   pointAlong,
   rayBox,
   rayBoxes,
 } from "@wire-lock/shared";
-import type { InputCmd, MapDef, ServerMessages, Vec3 } from "@wire-lock/shared";
+import type { InputCmd, InputStepResult, MapDef, ServerMessages, Vec3, WeaponDef } from "@wire-lock/shared";
+import type { Sfx, SoundName } from "./audio/sfx";
 import type { InputController } from "./input/input";
 import type { ArenaRoom } from "./net/connection";
 import { SnapshotBuffer } from "./net/interpolation";
 import { Predictor } from "./net/prediction";
 import { ServerClock } from "./net/serverClock";
-import { readMove, type ArenaStateView, type PlayerView } from "./net/stateTypes";
+import { projectilesOf, readSim, type ArenaStateView, type PlayerView } from "./net/stateTypes";
 import { Effects } from "./render/effects";
 import { buildMapMesh } from "./render/mapMesh";
 import { PlayerMesh } from "./render/playerMesh";
+import { ProjectileMesh } from "./render/projectileMesh";
 import type { SceneContext } from "./render/scene";
 import { ViewModel } from "./render/viewModel";
 import type { DebugOverlay, DebugStats } from "./ui/debugOverlay";
@@ -38,16 +42,28 @@ const CORRECTION_TAU_MS = CORRECTION_SMOOTH_MS / 3;
 const PING_INTERVAL_MS = 1000;
 const STATS_WINDOW_MS = 1000;
 const UNKNOWN_PLAYER = "someone";
+/** How many of our own explosions to remember, so the server's echo of one we already showed is ignored. */
+const SHOWN_EXPLOSIONS_KEPT = 32;
 
 interface Remote {
   buffer: SnapshotBuffer;
   mesh: PlayerMesh;
 }
 
+/** Someone else's projectile, drawn from interpolated server snapshots. */
+interface RemoteProjectile {
+  buffer: SnapshotBuffer;
+  mesh: ProjectileMesh;
+  vel: Vec3;
+  /** Server time of its last snapshot, once it has left the synced state. */
+  goneAt?: number;
+}
+
 export interface GameUi {
   overlay: DebugOverlay;
   hud: Hud;
   scoreboard: Scoreboard;
+  sfx: Sfx;
 }
 
 export class Game {
@@ -66,9 +82,12 @@ export class Game {
 
   private readonly effects: Effects;
   private readonly viewModel: ViewModel;
-  /** Local ticks simulated, and the tick we last fired on, mirroring the server's fire-rate rule for cosmetics. */
-  private localInputs = 0;
-  private lastFireInput = -Infinity;
+  /** Our own rockets, drawn from the prediction (keyed by shotSeq), with where each was at the start of the tick. */
+  private ownRockets = new Map<number, { mesh: ProjectileMesh; prev: Vec3 }>();
+  private remoteRockets = new Map<string, RemoteProjectile>();
+  /** Explosions from others, held until our delayed view of the world reaches them. */
+  private pendingExplosions: { at: Vec3; weapon: string; t: number }[] = [];
+  private shownOwnExplosions: number[] = [];
   private wasAlive = false;
   private lastHealth = 0;
   private lastKillerName = "";
@@ -99,14 +118,22 @@ export class Game {
     this.effects = new Effects(view.scene);
     this.viewModel = new ViewModel(view.camera);
     input.onScoreboard = (show) => (this.scoreboardHeld = show);
+    input.onWheel = (dir) => {
+      const arms = this.predictor?.sim.arms;
+      if (arms && arms.slots.length > 0) input.requestSlot((arms.current + dir + arms.slots.length) % arms.slots.length);
+    };
   }
 
   start(): void {
     this.room.onStateChange((state) => this.onState(state));
     this.onState(this.room.state);
     this.listen("fire", (m) => this.onRemoteFire(m));
-    this.listen("hit", (m) => this.ui.hud.hitmarker(m.killed));
+    this.listen("hit", (m) => {
+      this.ui.hud.hitmarker(m.killed);
+      this.ui.sfx.play(m.killed ? "kill" : "hit");
+    });
     this.listen("kill", (m) => this.onKill(m));
+    this.listen("explode", (m) => this.onExplode(m));
     this.listen("roundStart", () => {});
     this.listen("roundEnd", () => {});
     const ping = () => this.room.ping((ms) => (this.stats.pingMs = ms));
@@ -123,6 +150,10 @@ export class Game {
 
   private get me(): PlayerView | undefined {
     return this.room.state.players.get(this.room.sessionId);
+  }
+
+  private get canFire(): boolean {
+    return this.room.state.phase !== "ended";
   }
 
   private onState(state: ArenaStateView): void {
@@ -142,7 +173,7 @@ export class Game {
     state.players.forEach((p, id) => {
       seen.add(id);
       if (id === this.room.sessionId) {
-        this.onLocalState(p);
+        this.onLocalState(state, p);
         return;
       }
       let remote = this.remotes.get(id);
@@ -161,23 +192,55 @@ export class Game {
         });
       }
     });
-
     for (const [id, remote] of this.remotes) {
       if (seen.has(id)) continue;
       remote.mesh.dispose();
       this.remotes.delete(id);
     }
+
+    if (newTick) this.onRemoteProjectiles(state, serverMs);
   }
 
-  private onLocalState(p: PlayerView): void {
+  private onRemoteProjectiles(state: ArenaStateView, serverMs: number): void {
+    const seen = new Set<string>();
+    state.projectiles.forEach((p, key) => {
+      if (p.owner === this.room.sessionId) return; // ours are drawn from the prediction
+      seen.add(key);
+      let r = this.remoteRockets.get(key);
+      if (!r) {
+        r = { buffer: new SnapshotBuffer(), mesh: new ProjectileMesh(this.view.scene), vel: { x: 0, y: 0, z: 0 } };
+        r.mesh.root.visible = false;
+        this.remoteRockets.set(key, r);
+      }
+      r.vel = { x: p.vx, y: p.vy, z: p.vz };
+      r.buffer.push({ t: serverMs, pos: { x: p.x, y: p.y, z: p.z }, yaw: 0, pitch: 0, visible: true });
+    });
+    for (const [key, r] of this.remoteRockets) {
+      // Keep drawing it until our delayed view catches up with where it was last seen.
+      if (!seen.has(key) && r.goneAt === undefined) r.goneAt = r.buffer.lastTime ?? serverMs;
+    }
+  }
+
+  private onLocalState(state: ArenaStateView, p: PlayerView): void {
     const alive = p.alive && !p.away;
     if (alive && !this.wasAlive) this.onRespawn(p);
-    if (alive && p.health < this.lastHealth) this.ui.hud.damageFlash();
+    if (alive && p.health < this.lastHealth) {
+      this.ui.hud.damageFlash();
+      this.ui.sfx.play("hurt");
+    }
     this.wasAlive = alive;
     this.lastHealth = p.health;
     this.viewModel.visible = alive;
-    this.viewModel.setWeapon(getWeapon(p.weapon)?.view.color);
-    this.reconcileLocal(readMove(p), p.lastProcessedSeq, alive);
+
+    const sim = readSim(p);
+    const projectiles = projectilesOf(state, this.room.sessionId);
+    if (!this.predictor) {
+      // First sighting of ourselves: start predicting from the spawn.
+      this.predictor = new Predictor(sim, projectiles, this.map);
+      this.prevPos = { ...sim.move.pos };
+      return;
+    }
+    this.applyCorrection(this.predictor.reconcile(sim, projectiles, p.lastProcessedSeq, this.canFire));
   }
 
   /** Face the way the spawn point faces. (The synced yaw is our own last input, not the spawn's.) */
@@ -191,19 +254,10 @@ export class Game {
       }
     }
     this.input.pitch = 0;
-    this.lastFireInput = -Infinity;
   }
 
-  private reconcileLocal(server: ReturnType<typeof readMove>, lastProcessedSeq: number, alive: boolean): void {
-    if (!this.predictor) {
-      // First sighting of ourselves: start predicting from the spawn.
-      this.predictor = new Predictor(server, this.map);
-      this.predictor.alive = alive;
-      this.prevPos = { ...server.pos };
-      return;
-    }
-
-    const err = this.predictor.reconcile(server, lastProcessedSeq, alive);
+  private applyCorrection(err: Vec3): void {
+    if (!this.predictor) return;
     const mag = Math.hypot(err.x, err.y, err.z);
     if (mag === 0) return;
 
@@ -213,7 +267,7 @@ export class Game {
     const o = this.correctionOffset;
     const combined = { x: o.x + err.x, y: o.y + err.y, z: o.z + err.z };
     if (Math.hypot(combined.x, combined.y, combined.z) > CORRECTION_SNAP_DISTANCE) {
-      // Large error (e.g. respawn): snap.
+      // Large error (e.g. respawn, or someone else's rocket): snap.
       this.correctionOffset = { x: 0, y: 0, z: 0 };
       this.prevPos = { ...this.predictor.state.pos };
     } else {
@@ -229,10 +283,31 @@ export class Game {
     const now = performance.now();
     const remote = this.remotes.get(m.shooter);
     const from = remote?.mesh.visible ? remote.mesh.muzzlePosition() : undefined;
+    const weapon = getWeapon(m.weapon);
+    if (weapon?.view.sound) this.ui.sfx.play(weapon.view.sound as SoundName, from);
     if (from) this.effects.muzzleFlash(from, now);
     for (const end of m.ends) {
       if (from) this.effects.tracer(from, end, now);
       this.effects.impact(end, now);
+    }
+  }
+
+  private onExplode(m: ServerMessages["explode"]): void {
+    if (m.owner === this.room.sessionId) {
+      // Usually we predicted it already; show the server's only if we didn't (e.g. it hit a player we didn't know about).
+      if (!this.shownOwnExplosions.includes(m.shotSeq)) this.showExplosion(m.pos, m.weapon, m.shotSeq);
+      return;
+    }
+    this.pendingExplosions.push({ at: m.pos, weapon: m.weapon, t: m.tick * TICK_MS });
+  }
+
+  private showExplosion(at: Vec3, weaponId: string, ownShotSeq?: number): void {
+    const weapon = getWeapon(weaponId);
+    this.effects.explosion(at, weapon?.projectile?.splashRadius ?? 1, performance.now());
+    this.ui.sfx.play("explosion", at);
+    if (ownShotSeq !== undefined) {
+      this.shownOwnExplosions.push(ownShotSeq);
+      if (this.shownOwnExplosions.length > SHOWN_EXPLOSIONS_KEPT) this.shownOwnExplosions.shift();
     }
   }
 
@@ -263,38 +338,50 @@ export class Game {
       pitch: this.input.pitch,
       fire: sampled.fire,
       altFire: sampled.altFire,
+      reload: sampled.reload,
+      ...(sampled.weaponSlot === undefined ? {} : { weaponSlot: sampled.weaponSlot }),
     };
     this.prevPos = { ...this.predictor.state.pos };
-    this.predictor.apply(cmd);
+    for (const p of this.predictor.projectiles) {
+      const r = this.ownRockets.get(p.shotSeq);
+      if (r) r.prev = { ...p.pos };
+    }
+    const result = this.predictor.apply(cmd, this.canFire);
     this.outbox.push(cmd);
-
-    this.localInputs++;
-    if (cmd.fire && this.predictor.alive && this.room.state.phase !== "ended") this.tryLocalShot(now);
+    this.predictedEffects(result, now);
   }
 
-  /** Cosmetic only: the server decides hits. Mirrors the server's fire-rate rule so shots line up. */
-  private tryLocalShot(now: number): void {
-    const weapon = getWeapon(this.me?.weapon ?? "");
-    if (!weapon || !this.predictor) return;
-    if ((this.localInputs - this.lastFireInput) * TICK_MS < weapon.fireIntervalMs) return;
-    this.lastFireInput = this.localInputs;
+  /** Effects and sounds for what our own input just did. Replays during reconciliation don't come through here. */
+  private predictedEffects(r: InputStepResult, now: number): void {
+    if (r.switched) this.ui.sfx.play("switch");
+    if (r.reloadStarted) this.ui.sfx.play("reload");
+    if (r.fired) this.localShot(r.fired, r.origin, r.aim, now);
+    for (const e of r.explosions) this.showExplosion(e.point, e.weapon.id, e.shotSeq);
+  }
 
-    const origin = eyePosition(this.predictor.state.pos);
-    const dir = aimDirection(this.input.yaw, this.input.pitch);
-    const range = weapon.range ?? 0;
-    let dist = rayBoxes(origin, dir, this.map.boxes, range);
-    for (const remote of this.remotes.values()) {
-      if (!remote.mesh.visible) continue;
-      const p = remote.mesh.root.position;
-      const d = rayBox(origin, dir, playerBox({ x: p.x, y: p.y, z: p.z }), dist);
-      if (d !== null && d < dist) dist = d;
-    }
-    const end = pointAlong(origin, dir, dist);
+  /** Cosmetic only: the server decides hits. */
+  private localShot(weapon: WeaponDef, origin: Vec3, aim: Vec3, now: number): void {
     const muzzle = this.viewModel.muzzlePosition();
     this.effects.muzzleFlash(muzzle, now);
-    this.effects.tracer(muzzle, end, now);
-    if (dist < range) this.effects.impact(end, now);
     this.viewModel.kick();
+    if (weapon.view.sound) this.ui.sfx.play(weapon.view.sound as SoundName);
+    if (weapon.kind !== "hitscan") return;
+
+    const range = weapon.range ?? 0;
+    for (let i = 0; i < (weapon.pellets ?? 1); i++) {
+      // Client-side spread is cosmetic, so it needn't match the server's seeded RNG.
+      const dir = applySpread(aim, weapon.spreadRad ?? 0, Math.random);
+      let dist = rayBoxes(origin, dir, this.map.boxes, range);
+      for (const remote of this.remotes.values()) {
+        if (!remote.mesh.visible) continue;
+        const p = remote.mesh.root.position;
+        const d = rayBox(origin, dir, playerBox({ x: p.x, y: p.y, z: p.z }), dist);
+        if (d !== null && d < dist) dist = d;
+      }
+      const end = pointAlong(origin, dir, dist);
+      this.effects.tracer(muzzle, end, now);
+      if (dist < range) this.effects.impact(end, now);
+    }
   }
 
   private frame = (now: number): void => {
@@ -317,30 +404,27 @@ export class Game {
     this.correctionOffset.y *= decay;
     this.correctionOffset.z *= decay;
 
-    this.renderLocal();
+    const alpha = this.accumulator / TICK_MS;
+    this.renderLocal(alpha);
+    this.renderOwnRockets(alpha);
     const serverNow = this.serverClock.now(now);
-    if (serverNow !== null) {
-      const renderTime = serverNow - INTERP_DELAY_MS;
-      for (const remote of this.remotes.values()) {
-        const s = remote.buffer.sample(renderTime);
-        if (s) remote.mesh.update(s.pos, s.yaw, s.pitch, s.visible);
-      }
-    }
+    if (serverNow !== null) this.renderRemote(serverNow - INTERP_DELAY_MS);
     this.viewModel.update(frameMs);
     this.effects.update(now);
+    const cam = this.view.camera.position;
+    this.ui.sfx.setListener({ x: cam.x, y: cam.y, z: cam.z }, this.input.yaw);
     this.view.renderer.render(this.view.scene, this.view.camera);
 
     this.updateUi(serverNow);
     this.updateStats(now);
   };
 
-  private renderLocal(): void {
+  private renderLocal(alpha: number): void {
     const cam = this.view.camera;
     cam.rotation.y = this.input.yaw;
     cam.rotation.x = this.input.pitch;
     if (!this.predictor) return;
 
-    const alpha = this.accumulator / TICK_MS;
     const cur = this.predictor.state.pos;
     const o = this.correctionOffset;
     cam.position.set(
@@ -350,13 +434,57 @@ export class Game {
     );
   }
 
+  private renderOwnRockets(alpha: number): void {
+    const live = new Set<number>();
+    for (const p of this.predictor?.projectiles ?? []) {
+      live.add(p.shotSeq);
+      let r = this.ownRockets.get(p.shotSeq);
+      if (!r) {
+        // New this tick: start it at the muzzle so it visibly leaves the gun.
+        r = { mesh: new ProjectileMesh(this.view.scene), prev: this.viewModel.muzzlePosition() };
+        this.ownRockets.set(p.shotSeq, r);
+      }
+      r.mesh.update(lerpVec3(r.prev, p.pos, alpha), p.vel);
+    }
+    for (const [seq, r] of this.ownRockets) {
+      if (live.has(seq)) continue;
+      r.mesh.dispose();
+      this.ownRockets.delete(seq);
+    }
+  }
+
+  private renderRemote(renderTime: number): void {
+    for (const remote of this.remotes.values()) {
+      const s = remote.buffer.sample(renderTime);
+      if (s) remote.mesh.update(s.pos, s.yaw, s.pitch, s.visible);
+    }
+    for (const [key, r] of this.remoteRockets) {
+      if (r.goneAt !== undefined && renderTime >= r.goneAt) {
+        r.mesh.dispose();
+        this.remoteRockets.delete(key);
+        continue;
+      }
+      // Don't show it before our delayed view of the shooter has fired it.
+      const first = r.buffer.firstTime;
+      const s = first !== undefined && renderTime >= first ? r.buffer.sample(renderTime) : null;
+      r.mesh.root.visible = !!s;
+      if (s) r.mesh.update(s.pos, r.vel);
+    }
+    const due = this.pendingExplosions.filter((e) => renderTime >= e.t);
+    if (due.length > 0) {
+      this.pendingExplosions = this.pendingExplosions.filter((e) => renderTime < e.t);
+      for (const e of due) this.showExplosion(e.at, e.weapon);
+    }
+  }
+
   // --- UI -----------------------------------------------------------------
 
   private updateUi(serverNow: number | null): void {
     const s = this.room.state;
     const me = this.me;
     const mode = getMode(s.modeId);
-    const weapon = getWeapon(me?.weapon ?? "");
+    const arms = this.predictor?.sim.arms;
+    const weapon = arms ? currentWeapon(arms) : undefined;
     const alive = !!me && me.alive && !me.away;
     const secondsUntil = (tick: number) =>
       serverNow === null ? 0 : Math.max(0, Math.ceil((tick * TICK_MS - serverNow) / 1000));
@@ -386,16 +514,19 @@ export class Game {
       centerSub = me.respawnTick > 0 ? `Respawning in ${secondsUntil(me.respawnTick)}` : "";
     }
 
+    const ammo = arms?.ammo[arms.current] ?? 0;
     this.ui.hud.update({
       health: me?.health ?? 0,
       alive,
       weaponName: weapon?.name ?? "",
-      ammo: weapon?.magazine === undefined ? "∞" : String(weapon.magazine),
+      ammo: arms && arms.reloadMs > 0 ? "Reloading…" : ammo === INFINITE_AMMO ? "∞" : `${ammo} / ${weapon?.magazine ?? 0}`,
+      slots: (arms?.slots ?? []).map((id, i) => ({ name: getWeapon(id)?.name ?? id, active: i === arms?.current })),
       roundText,
       roundSub,
       centerText,
       centerSub,
     });
+    this.viewModel.setWeapon(weapon?.view.color);
 
     const showBoard = this.scoreboardHeld || s.phase === "ended";
     const rows: ScoreRow[] = [];

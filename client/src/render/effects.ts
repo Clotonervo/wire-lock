@@ -10,6 +10,10 @@ const IMPACT_GROWTH = 2.5;
 const TRACER_COLOR = 0xfff2a8;
 const FLASH_COLOR = 0xffd24a;
 const IMPACT_COLOR = 0xcfcfcf;
+const EXPLOSION_MS = 350;
+const EXPLOSION_COLOR = 0xff8a2a;
+/** Explosion sphere starts at this fraction of the splash radius and grows to the full radius. */
+const EXPLOSION_START = 0.25;
 
 interface Effect {
   object: THREE.Mesh | THREE.Line;
@@ -39,6 +43,10 @@ export class Effects {
 
   impact(at: Vec3, now: number): void {
     this.puff(at, IMPACT_SIZE, IMPACT_COLOR, now, IMPACT_MS, IMPACT_GROWTH);
+  }
+
+  explosion(at: Vec3, radius: number, now: number): void {
+    this.puff(at, radius * EXPLOSION_START, EXPLOSION_COLOR, now, EXPLOSION_MS, 1 / EXPLOSION_START);
   }
 
   update(now: number): void {

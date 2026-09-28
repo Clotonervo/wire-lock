@@ -1,4 +1,5 @@
 import { getMap } from "@wire-lock/shared";
+import { Sfx } from "./audio/sfx";
 import { Game } from "./game";
 import { InputController } from "./input/input";
 import { connect } from "./net/connection";
@@ -40,9 +41,15 @@ async function main() {
   input.onLockChange = (locked) => {
     if (lockPrompt) lockPrompt.hidden = locked;
   };
-  lockPrompt?.addEventListener("click", () => input.requestLock());
+  const sfx = new Sfx();
+  input.onGesture = () => sfx.unlock();
+  input.onMuteToggle = () => sfx.toggleMute();
+  lockPrompt?.addEventListener("click", () => {
+    sfx.unlock();
+    input.requestLock();
+  });
 
-  const ui = { overlay, hud: new Hud(hudRoot), scoreboard: new Scoreboard(document.body) };
+  const ui = { overlay, hud: new Hud(hudRoot), scoreboard: new Scoreboard(document.body), sfx };
   const game = new Game(room, map, view, input, ui);
   game.start();
 

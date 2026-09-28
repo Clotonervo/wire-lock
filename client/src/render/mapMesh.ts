@@ -14,6 +14,7 @@ export function buildMapMesh(map: MapDef): THREE.Group {
   const byColor = new Map<string, THREE.BufferGeometry[]>();
 
   for (const b of map.boxes) {
+    if (b.invisible) continue;
     const size = new THREE.Vector3(b.max.x - b.min.x, b.max.y - b.min.y, b.max.z - b.min.z);
     const geo = new THREE.BoxGeometry(size.x, size.y, size.z);
     geo.translate((b.min.x + b.max.x) / 2, (b.min.y + b.max.y) / 2, (b.min.z + b.max.z) / 2);

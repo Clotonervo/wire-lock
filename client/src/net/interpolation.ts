@@ -32,6 +32,15 @@ export class SnapshotBuffer {
     return this.snaps.length;
   }
 
+  /** Time of the oldest / newest snapshot held, if any. */
+  get firstTime(): number | undefined {
+    return this.snaps[0]?.t;
+  }
+
+  get lastTime(): number | undefined {
+    return this.snaps[this.snaps.length - 1]?.t;
+  }
+
   sample(renderTime: number): Snapshot | null {
     const snaps = this.snaps;
     const first = snaps[0];
