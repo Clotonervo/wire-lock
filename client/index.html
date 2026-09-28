@@ -5,11 +5,34 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Wire Lock</title>
     <style>
-      html, body { margin: 0; height: 100%; background: #111; color: #ddd; font: 14px/1.4 system-ui, sans-serif; }
-      #status { position: fixed; top: 12px; left: 12px; }
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #111; color: #eee; font: 14px/1.4 system-ui, sans-serif; }
+      #game { position: fixed; inset: 0; }
+      #game canvas { display: block; }
+      #status { position: fixed; top: 12px; left: 12px; pointer-events: none; }
+      #crosshair {
+        position: fixed; top: 50%; left: 50%; width: 4px; height: 4px; margin: -2px 0 0 -2px;
+        background: #fff; border-radius: 50%; box-shadow: 0 0 0 1px #0008; pointer-events: none;
+      }
+      #lock-prompt {
+        position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+        gap: 8px; background: #000a; cursor: pointer; text-align: center;
+      }
+      #lock-prompt[hidden] { display: none; }
+      #lock-prompt h1 { margin: 0; font-size: 28px; letter-spacing: 0.04em; }
+      #lock-prompt p { margin: 0; opacity: 0.8; }
+      .debug-overlay {
+        position: fixed; top: 8px; right: 8px; margin: 0; padding: 8px 10px;
+        background: #000b; color: #9f9; font: 12px/1.4 ui-monospace, Consolas, monospace; pointer-events: none;
+      }
     </style>
   </head>
   <body>
+    <div id="game"></div>
+    <div id="crosshair"></div>
+    <div id="lock-prompt">
+      <h1>Click to play</h1>
+      <p>WASD move · Space jump · Mouse look · F3 debug · Esc release</p>
+    </div>
     <div id="status">connecting…</div>
     <script type="module" src="/src/main.ts"></script>
   </body>
