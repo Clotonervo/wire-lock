@@ -135,7 +135,9 @@ interface InputCmd {
 ```
 The server validates each command (clamp values, reject absurd `dt`, drop out-of-order `seq`) and records `lastProcessedSeq` per player in synced state.
 
-**Input pacing:** each player's valid commands go into a queue (capped at `MAX_INPUT_QUEUE`, oldest dropped). Each tick the server applies **one** command per player, or `MAX_INPUTS_PER_TICK` (2) once more than `INPUT_BACKLOG` are queued. This acts as a small jitter buffer: a client sending bursts (e.g. two inputs per frame at 15 fps) still moves smoothly for everyone else, and the catch-up cap limits speed hacks to 2×. A player only moves when one of their commands is applied. The client keeps sending idle commands while nothing is pressed, but a player whose tab is hidden (no `requestAnimationFrame`) freezes in place, even mid-air.
+**Input pacing:** each player's valid commands go into a queue (capped at `MAX_INPUT_QUEUE`, oldest dropped). Each tick the server applies **one** command per player, or `MAX_INPUTS_PER_TICK` (2) once more than `INPUT_BACKLOG` are queued. This acts as a small jitter buffer: a client sending bursts (e.g. two inputs per frame at 15 fps) still moves smoothly for everyone else, and the catch-up cap limits speed hacks to 2×. A player only moves when one of their commands is applied. The client keeps sending idle commands while nothing is pressed, but a player whose tab is hidden (no `requestAnimationFrame`) freezes in place, even mid-air. This is intentional: having the server move idle players would make every active player's prediction more complex just for this edge case.
+
+**Away players (M2):** a frozen player would otherwise be a free kill. After `AWAY_TIMEOUT_MS` (~8 s) with no applied input, the server marks the player `away`: removed from the world (not hittable, not rendered, not holding a spawn point, not counted by the mode's win or scoring logic). Their next input respawns them through the normal spawn path (`mode.pickSpawn`), with no respawn delay. A deliberate "lag switch" (withholding input and then bursting it) is bounded by `MAX_INPUT_QUEUE` and the 2× catch-up cap, and it gains no aim advantage because fire commands are resolved when they're processed. That's accepted per the non-goals.
 
 ### 5.3 Client-side prediction and reconciliation
 1. Each client tick: sample input, assign `seq`, send it, apply it locally via `shared/movement.ts`, and push it onto a `pendingInputs` buffer.
@@ -299,9 +301,10 @@ Each milestone should end with the game in a runnable state and the acceptance c
 
 ### M2 — Shoot each other (Deathmatch)
 - Weapon system with Pistol, health, damage, death, respawn with delay.
+- Away handling: players with no input for `AWAY_TIMEOUT_MS` leave the world until they return (§5.2).
 - Deathmatch mode: kills, scores, win condition, round reset.
 - HUD, kill feed, scoreboard.
-- ✅ Two players can play a full deathmatch round to completion.
+- ✅ Two players can play a full deathmatch round to completion. A player who hides their tab disappears from the world after the timeout and respawns when they return.
 
 ### M3 — Weapon variety
 - Shotgun and Rocket Launcher (projectiles, splash, knockback).
@@ -350,4 +353,3 @@ Each milestone should end with the game in a runnable state and the acceptance c
 - Server region: pick the one closest to where most players will be.
 - Should rooms be public (listed) or private (code-only) in v1? Default: code-only.
 - Is audio in scope for M3, or deferred?
-- Players freeze when their tab is hidden (see §5.2 input pacing). Should the server instead apply idle input after a timeout, so they fall and stay hittable? The catch is that the client must then reconcile against inputs it never sent.
