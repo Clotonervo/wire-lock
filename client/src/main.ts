@@ -5,17 +5,20 @@ import { connect } from "./net/connection";
 import type { ArenaStateView } from "./net/stateTypes";
 import { createScene } from "./render/scene";
 import { DebugOverlay } from "./ui/debugOverlay";
+import { Hud } from "./ui/hud";
+import { Scoreboard } from "./ui/scoreboard";
 
 const container = document.getElementById("game");
 const status = document.getElementById("status");
 const lockPrompt = document.getElementById("lock-prompt");
+const hudRoot = document.getElementById("hud");
 
 function setStatus(text: string) {
   if (status) status.textContent = text;
 }
 
 async function main() {
-  if (!container) throw new Error("#game container missing");
+  if (!container || !hudRoot) throw new Error("#game or #hud container missing");
 
   const room = await connect();
   console.log(`connected: ${room.sessionId}`);
@@ -39,7 +42,8 @@ async function main() {
   };
   lockPrompt?.addEventListener("click", () => input.requestLock());
 
-  const game = new Game(room, map, view, input, overlay);
+  const ui = { overlay, hud: new Hud(hudRoot), scoreboard: new Scoreboard(document.body) };
+  const game = new Game(room, map, view, input, ui);
   game.start();
 
   if (import.meta.env.DEV) Object.assign(window, { game });

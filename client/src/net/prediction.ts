@@ -10,13 +10,15 @@ import type { InputCmd, MapDef, PlayerMoveState, Vec3 } from "@wire-lock/shared"
 export class Predictor {
   state: PlayerMoveState;
   pending: InputCmd[] = [];
+  /** Dead (or away) players don't move; the server still acknowledges their inputs. */
+  alive = true;
 
   constructor(initial: PlayerMoveState, private readonly map: MapDef) {
     this.state = initial;
   }
 
   apply(cmd: InputCmd): void {
-    this.state = stepPlayer(this.state, cmd, this.map, cmd.dt);
+    if (this.alive) this.state = stepPlayer(this.state, cmd, this.map, cmd.dt);
     this.pending.push(cmd);
   }
 
@@ -24,11 +26,12 @@ export class Predictor {
    * Rebases on the server's state and replays unacknowledged inputs.
    * Returns the prediction error (old predicted position minus new).
    */
-  reconcile(server: PlayerMoveState, lastProcessedSeq: number): Vec3 {
+  reconcile(server: PlayerMoveState, lastProcessedSeq: number, alive = true): Vec3 {
+    this.alive = alive;
     this.pending = this.pending.filter((c) => c.seq > lastProcessedSeq);
 
     let s = server;
-    for (const cmd of this.pending) s = stepPlayer(s, cmd, this.map, cmd.dt);
+    if (alive) for (const cmd of this.pending) s = stepPlayer(s, cmd, this.map, cmd.dt);
 
     const old = this.state.pos;
     this.state = s;

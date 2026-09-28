@@ -7,6 +7,8 @@ export interface Snapshot {
   pos: Vec3;
   yaw: number;
   pitch: number;
+  /** Alive and not away. */
+  visible: boolean;
 }
 
 /** Enough history for the interpolation delay with plenty of slack. */
@@ -48,7 +50,7 @@ export class SnapshotBuffer {
 
     // Past the newest snapshot: extrapolate briefly along the last motion, then freeze.
     const prev = snaps[snaps.length - 2];
-    if (!prev) return last;
+    if (!prev || !prev.visible || !last.visible) return last;
     const over = Math.min(renderTime - last.t, MAX_EXTRAPOLATION_MS);
     const f = 1 + over / (last.t - prev.t);
     return { ...blend(prev, last, f, renderTime), yaw: last.yaw, pitch: last.pitch };
@@ -56,10 +58,13 @@ export class SnapshotBuffer {
 }
 
 function blend(a: Snapshot, b: Snapshot, f: number, t: number): Snapshot {
+  // Across a death or respawn the player teleports: hold the old snapshot rather than sliding across the map.
+  if (a.visible !== b.visible) return { ...a, t };
   return {
     t,
     pos: { x: lerp(a.pos.x, b.pos.x, f), y: lerp(a.pos.y, b.pos.y, f), z: lerp(a.pos.z, b.pos.z, f) },
     yaw: lerpAngle(a.yaw, b.yaw, f),
     pitch: lerp(a.pitch, b.pitch, f),
+    visible: a.visible,
   };
 }

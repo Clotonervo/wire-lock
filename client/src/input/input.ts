@@ -3,6 +3,8 @@ import type { AxisInput } from "@wire-lock/shared";
 
 const SENSITIVITY_KEY = "wire-lock.sensitivity";
 const DEFAULT_SENSITIVITY = 0.002;
+const LEFT_BUTTON = 0;
+const RIGHT_BUTTON = 2;
 
 function loadSensitivity(): number {
   try {
@@ -16,10 +18,12 @@ function loadSensitivity(): number {
 export interface SampledInput {
   move: { x: AxisInput; z: AxisInput };
   jump: boolean;
+  fire: boolean;
+  altFire: boolean;
 }
 
 /**
- * Pointer lock, keyboard state and mouse look (DESIGN.md §9.2).
+ * Pointer lock, keyboard/mouse state and mouse look (DESIGN.md §9.2).
  * Look angles update on every mouse event so the camera is never tied to the tick rate.
  */
 export class InputController {
@@ -29,14 +33,17 @@ export class InputController {
   sensitivity = loadSensitivity();
   onLockChange: (locked: boolean) => void = () => {};
   onDebugToggle: () => void = () => {};
+  onScoreboard: (show: boolean) => void = () => {};
 
   private keys = new Set<string>();
+  private buttons = new Set<number>();
 
   constructor(private readonly canvas: HTMLCanvasElement) {
     canvas.addEventListener("click", () => this.requestLock());
+    canvas.addEventListener("contextmenu", (e) => e.preventDefault());
     document.addEventListener("pointerlockchange", () => {
       this.locked = document.pointerLockElement === canvas;
-      if (!this.locked) this.keys.clear();
+      if (!this.locked) this.release();
       this.onLockChange(this.locked);
     });
     document.addEventListener("mousemove", (e) => {
@@ -44,18 +51,30 @@ export class InputController {
       this.yaw = wrapAngle(this.yaw - e.movementX * this.sensitivity);
       this.pitch = clamp(this.pitch - e.movementY * this.sensitivity, -MAX_PITCH, MAX_PITCH);
     });
+    document.addEventListener("mousedown", (e) => {
+      if (this.locked) this.buttons.add(e.button);
+    });
+    document.addEventListener("mouseup", (e) => this.buttons.delete(e.button));
     document.addEventListener("keydown", (e) => {
       if (e.code === "F3") {
         e.preventDefault();
         this.onDebugToggle();
         return;
       }
+      if (e.code === "Tab") {
+        e.preventDefault();
+        if (!e.repeat) this.onScoreboard(true);
+        return;
+      }
       if (!this.locked) return;
       if (e.code === "Space") e.preventDefault();
       this.keys.add(e.code);
     });
-    document.addEventListener("keyup", (e) => this.keys.delete(e.code));
-    window.addEventListener("blur", () => this.keys.clear());
+    document.addEventListener("keyup", (e) => {
+      if (e.code === "Tab") this.onScoreboard(false);
+      this.keys.delete(e.code);
+    });
+    window.addEventListener("blur", () => this.release());
   }
 
   requestLock(): void {
@@ -72,7 +91,15 @@ export class InputController {
         z: axis(k.has("KeyW"), k.has("KeyS")),
       },
       jump: k.has("Space"),
+      fire: this.buttons.has(LEFT_BUTTON),
+      altFire: this.buttons.has(RIGHT_BUTTON),
     };
+  }
+
+  private release(): void {
+    this.keys.clear();
+    this.buttons.clear();
+    this.onScoreboard(false);
   }
 }
 

@@ -52,6 +52,18 @@ describe("Predictor", () => {
     expect(p.state).toEqual(expected);
   });
 
+  it("doesn't move while dead, but still tracks pending inputs", () => {
+    const p = new Predictor(start, testArena);
+    p.alive = false;
+    p.apply(cmd(0));
+    expect(p.state).toEqual(start);
+    expect(p.pending).toHaveLength(1);
+
+    const err = p.reconcile(start, -1, false);
+    expect(err).toEqual({ x: 0, y: 0, z: 0 });
+    expect(p.state).toEqual(start);
+  });
+
   it("drops everything once the server has caught up", () => {
     const p = new Predictor(start, testArena);
     const cmds = [cmd(0), cmd(1)];

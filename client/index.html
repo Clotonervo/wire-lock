@@ -20,6 +20,43 @@
       #lock-prompt[hidden] { display: none; }
       #lock-prompt h1 { margin: 0; font-size: 28px; letter-spacing: 0.04em; }
       #lock-prompt p { margin: 0; opacity: 0.8; }
+      #crosshair[hidden] { display: none; }
+      #crosshair.hit { background: transparent; box-shadow: none; }
+      #crosshair.hit::before, #crosshair.hit::after {
+        content: ""; position: absolute; left: -5px; top: 1px; width: 14px; height: 2px; background: #fff;
+      }
+      #crosshair.hit::before { transform: rotate(45deg); }
+      #crosshair.hit::after { transform: rotate(-45deg); }
+      #crosshair.kill::before, #crosshair.kill::after { background: #ff4040; }
+      #hud { position: fixed; inset: 0; pointer-events: none; text-shadow: 0 1px 2px #000c; }
+      .hud-top { position: absolute; top: 10px; left: 0; right: 0; text-align: center; }
+      .hud-round { font-size: 22px; font-weight: 700; }
+      .hud-round-sub { font-size: 13px; opacity: 0.85; }
+      .hud-feed { position: absolute; top: 36px; left: 12px; margin: 0; padding: 0; list-style: none; font-size: 13px; }
+      .hud-feed li { margin-bottom: 3px; padding: 2px 6px; background: #0006; border-radius: 3px; width: fit-content; }
+      .hud-feed li.mine { background: #7a5a0099; }
+      .hud-feed .weapon { opacity: 0.75; }
+      .hud-middle { position: absolute; top: 58%; left: 0; right: 0; text-align: center; }
+      .hud-center { font-size: 26px; font-weight: 700; }
+      .hud-center-sub { font-size: 15px; opacity: 0.9; }
+      .hud-health { position: absolute; left: 20px; bottom: 16px; font-size: 40px; font-weight: 800; }
+      .hud-health:not(:empty)::after { content: " HP"; font-size: 16px; font-weight: 600; opacity: 0.8; }
+      .hud-health.low { color: #ff5a5a; }
+      .hud-weapon { position: absolute; right: 20px; bottom: 20px; font-size: 22px; font-weight: 700; white-space: pre; }
+      .hud-damage { position: absolute; inset: 0; box-shadow: inset 0 0 120px 30px #ff000000; transition: box-shadow 0.3s; }
+      .hud-damage.on { box-shadow: inset 0 0 120px 30px #ff0000aa; transition: none; }
+      .scoreboard {
+        position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); min-width: 320px; max-width: calc(100vw - 32px);
+        padding: 14px 18px; background: #000c; border-radius: 6px; pointer-events: none;
+      }
+      .scoreboard[hidden] { display: none; }
+      .scoreboard h2 { margin: 0 0 8px; font-size: 18px; text-align: center; }
+      .scoreboard table { width: 100%; border-collapse: collapse; }
+      .scoreboard td { padding: 3px 8px; }
+      .scoreboard thead td { opacity: 0.6; font-size: 12px; }
+      .scoreboard td:nth-child(2), .scoreboard td:nth-child(3) { text-align: right; }
+      .scoreboard td:nth-child(4) { opacity: 0.6; font-size: 12px; }
+      .scoreboard tr.me { color: #ffd24a; }
       .debug-overlay {
         position: fixed; top: 8px; right: 8px; margin: 0; padding: 8px 10px;
         background: #000b; color: #9f9; font: 12px/1.4 ui-monospace, Consolas, monospace; pointer-events: none;
@@ -28,10 +65,11 @@
   </head>
   <body>
     <div id="game"></div>
+    <div id="hud"></div>
     <div id="crosshair"></div>
     <div id="lock-prompt">
       <h1>Click to play</h1>
-      <p>WASD move · Space jump · Mouse look · F3 debug · Esc release</p>
+      <p>WASD move · Space jump · Mouse look · Click shoot · Tab scores · F3 debug · Esc release</p>
     </div>
     <div id="status">connecting…</div>
     <script type="module" src="/src/main.ts"></script>

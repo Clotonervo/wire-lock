@@ -11,6 +11,7 @@ const GUN_COLOR = 0x222222;
 export class PlayerMesh {
   readonly root = new THREE.Group();
   private readonly head = new THREE.Group();
+  private readonly muzzle = new THREE.Object3D();
 
   constructor(color: string) {
     const body = new THREE.Mesh(
@@ -27,14 +28,26 @@ export class PlayerMesh {
       new THREE.MeshLambertMaterial({ color: GUN_COLOR }),
     );
     gun.position.set(GUN_OFFSET.x, GUN_OFFSET.y, GUN_OFFSET.z);
+    this.muzzle.position.z = -GUN_SIZE.z / 2;
+    gun.add(this.muzzle);
     this.head.add(gun);
     this.root.add(this.head);
   }
 
-  update(pos: Vec3, yaw: number, pitch: number): void {
+  update(pos: Vec3, yaw: number, pitch: number, visible: boolean): void {
     this.root.position.set(pos.x, pos.y, pos.z);
     this.root.rotation.y = yaw;
     this.head.rotation.x = pitch;
+    this.root.visible = visible;
+  }
+
+  get visible(): boolean {
+    return this.root.visible;
+  }
+
+  muzzlePosition(): Vec3 {
+    const p = this.muzzle.getWorldPosition(new THREE.Vector3());
+    return { x: p.x, y: p.y, z: p.z };
   }
 
   dispose(): void {
