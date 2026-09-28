@@ -34,8 +34,14 @@ export const MAX_INPUT_BATCH = 10;
 export const MAX_MESSAGES_PER_SECOND = 60;
 /** Inputs buffered per player on the server; the oldest are dropped beyond this. */
 export const MAX_INPUT_QUEUE = 30;
-/** Inputs the server applies per player per tick (lets a backlog drain without allowing speed hacks). */
-export const MAX_INPUTS_PER_TICK = 4;
+/**
+ * The server applies one input per player per tick, which smooths out bursty
+ * clients (e.g. one sending two inputs per frame at 15 fps). Once more than
+ * this many are queued, it catches up at MAX_INPUTS_PER_TICK instead.
+ */
+export const INPUT_BACKLOG = 3;
+/** Inputs applied per tick while catching up; also caps how fast a speed hack can move. */
+export const MAX_INPUTS_PER_TICK = 2;
 
 // --- Player (DESIGN.md §6.1) ---
 

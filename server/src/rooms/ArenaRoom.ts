@@ -1,6 +1,7 @@
 import { Room, type Client } from "@colyseus/core";
 import {
   DEFAULT_MAP_ID,
+  INPUT_BACKLOG,
   KILL_Y,
   MAX_INPUTS_PER_TICK,
   MAX_INPUT_BATCH,
@@ -9,7 +10,7 @@ import {
   MAX_PLAYERS_PER_ROOM,
   PATCH_RATE_MS,
   TICK_DT,
-  TICK_MS,
+  TICK_RATE_HZ,
   getMap,
   stepPlayer,
 } from "@wire-lock/shared";
@@ -47,7 +48,9 @@ export class ArenaRoom extends Room<{ state: ArenaState }> {
     this.map = map;
 
     this.state = new ArenaState({ mapId: map.id, tick: 0 });
-    this.setSimulationInterval(() => this.tick(), TICK_MS);
+    // Accumulator-based, so the long-run rate is exactly TICK_RATE_HZ (plain setInterval(33.3) drifts to ~29.4 Hz,
+    // which makes client inputs pile up and forces catch-up steps that look like hitches to other players).
+    this.setFixedTimestep(() => this.tick(), TICK_RATE_HZ);
     log("room.create", { roomId: this.roomId, map: map.id });
   }
 
@@ -103,7 +106,8 @@ export class ArenaRoom extends Room<{ state: ArenaState }> {
       if (!rt) return;
 
       // Players only move when their inputs arrive, so client prediction replays exactly.
-      const inputs = rt.queue.splice(0, MAX_INPUTS_PER_TICK);
+      const count = rt.queue.length > INPUT_BACKLOG ? MAX_INPUTS_PER_TICK : 1;
+      const inputs = rt.queue.splice(0, count);
       if (inputs.length === 0) return;
 
       let move = readMove(player);

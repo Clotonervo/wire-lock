@@ -13,5 +13,13 @@ const server = new Server({
 
 server.define(ROOM_NAME, ArenaRoom);
 
+// `--latency=<ms>` simulates round-trip latency for netcode testing (COLYSEUS_LATENCY also works).
+const latencyArg = process.argv.find((a) => a.startsWith("--latency="));
+const latencyMs = latencyArg ? Number(latencyArg.split("=")[1]) : 0;
+if (latencyMs > 0) {
+  server.simulateLatency(latencyMs);
+  log("server.latency", { roundTripMs: latencyMs });
+}
+
 await server.listen(port);
 log("server.listen", { port });

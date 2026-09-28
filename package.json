@@ -8,6 +8,7 @@
   },
   "scripts": {
     "dev": "concurrently -k -n server,client -c blue,green \"pnpm --filter @wire-lock/server dev\" \"pnpm --filter @wire-lock/client dev\"",
+    "dev:lag": "concurrently -k -n server,client -c blue,green \"pnpm --filter @wire-lock/server dev:lag\" \"pnpm --filter @wire-lock/client dev\"",
     "build": "pnpm -r build",
     "test": "vitest run",
     "lint": "eslint . && pnpm -r typecheck"
