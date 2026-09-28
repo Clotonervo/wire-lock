@@ -151,6 +151,7 @@ The server validates each command (clamp values, reject absurd `dt`, drop out-of
 
 ### 5.5 Shooting and hit registration
 - **Hitscan weapons:** resolved on the server by raycasting from the player's eye position along their yaw/pitch at the tick the fire input is processed.
+- **Fire rate** is measured in *applied inputs* (`fireIntervalMs / TICK_MS`), not client `seq` numbers, which a modified client could skip. The client runs the same rule on its own tick count, so its cosmetic shots line up with the server's real ones.
 - **Projectile weapons:** simulated on the server; the client spawns a cosmetic projectile immediately on fire for feel, and the server's projectile replaces or corrects it.
 - The client plays muzzle flash, sound and tracer immediately (cosmetic only); damage numbers and kills come from server events.
 - **Later upgrade (not v1):** lag compensation, where the server rewinds other players' positions to what the shooter saw (`serverTime - shooterRTT/2 - INTERP_DELAY`) before raycasting. Colyseus 0.18 ships a `Rewind` helper worth evaluating before hand-rolling this.
@@ -158,7 +159,8 @@ The server validates each command (clamp values, reject absurd `dt`, drop out-of
 ### 5.6 Events vs state
 - **Synced state (Colyseus Schema):** players (position, yaw, pitch, health, weapon, alive, score, lastProcessedSeq), projectiles, pickups, mode/round state.
 - Position and velocity are `t.float64()`. `t.number()` silently sends floats as float32 when the error is < 1e-4, which breaks exact reconciliation (the client re-simulates from the server's state).
-- **One-off messages (broadcast):** `hit`, `kill`, `fire` (for other clients' cosmetics), `roundStart`, `roundEnd`, `chat`.
+- **One-off messages:** `hit` (to the shooter only, for the hitmarker), `kill`, `fire` (to everyone but the shooter, one end point per pellet), `effect` (from weapon hooks), `roundStart`, `roundEnd`, and later `chat`. Payload types live in `shared/src/messages.ts`.
+- The round's score limit is synced state (`scoreLimit`) rather than read from the shared mode definition, so server overrides such as `--kill-limit` show correctly in the HUD.
 
 ---
 
@@ -304,7 +306,8 @@ Each milestone should end with the game in a runnable state and the acceptance c
 - Away handling: players with no input for `AWAY_TIMEOUT_MS` leave the world until they return (§5.2).
 - Deathmatch mode: kills, scores, win condition, round reset.
 - HUD, kill feed, scoreboard.
-- ✅ Two players can play a full deathmatch round to completion. A player who hides their tab disappears from the world after the timeout and respawns when they return.
+- ✅ **Done.** Two players can play a full deathmatch round to completion. A player who hides their tab disappears from the world after the timeout and respawns when they return.
+- Known limitation: dropping below `minPlayers` (e.g. one of two players going away) returns the room to warm-up, and the round restarts with scores reset when they return.
 
 ### M3 — Weapon variety
 - Shotgun and Rocket Launcher (projectiles, splash, knockback).
