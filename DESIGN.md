@@ -152,7 +152,9 @@ The server validates each command (clamp values, reject absurd `dt`, drop out-of
 ### 5.5 Shooting and hit registration
 - **Hitscan weapons:** resolved on the server by raycasting from the player's eye position along their yaw/pitch at the tick the fire input is processed.
 - **Fire rate** is measured in *applied inputs* (`fireIntervalMs / TICK_MS`), not client `seq` numbers, which a modified client could skip. The client runs the same rule on its own tick count, so its cosmetic shots line up with the server's real ones.
-- **Projectile weapons:** simulated on the server; the client spawns a cosmetic projectile immediately on fire for feel, and the server's projectile replaces or corrects it.
+- **Projectile weapons:** simulated on the server, but on the **owner's input timeline**: a player's projectiles advance once per applied input of theirs (`shared/src/playerStep.ts`), not once per server tick. As a result, the owner's client predicts its own rockets exactly, including the explosion's knockback on itself, so **rocket jumps are instant and need no correction**. The client ignores other players when predicting, so a rocket that hits someone on the server can differ; reconciliation fixes that. Other clients see the rocket interpolated 100 ms behind, like players, and each `explode` event carries its tick so they show the explosion when their delayed view reaches it.
+  - Trade-off: a player's rockets pause if their inputs stop arriving. Away and leaving players' projectiles are removed.
+- **Prediction covers the whole player:** movement, weapons (ammo, cooldown, reload, switch; `shared/src/arms.ts`) and own projectiles. The server syncs all of it at full precision so the client can rewind and replay. Cosmetic effects and sounds fire only when an input is first predicted, never during replays.
 - The client plays muzzle flash, sound and tracer immediately (cosmetic only); damage numbers and kills come from server events.
 - **Later upgrade (not v1):** lag compensation, where the server rewinds other players' positions to what the shooter saw (`serverTime - shooterRTT/2 - INTERP_DELAY`) before raycasting. Colyseus 0.18 ships a `Rewind` helper worth evaluating before hand-rolling this.
 
@@ -172,7 +174,7 @@ The server validates each command (clamp values, reject absurd `dt`, drop out-of
 - All constants live in `shared/constants.ts` so they are easy to tweak.
 
 ### 6.2 Map
-- v1 maps are **arrays of axis-aligned boxes** plus spawn points, defined as data in `shared/map/`:
+- v1 maps are **arrays of axis-aligned boxes** plus spawn points, defined as data in `shared/map/`. Boxes can be `invisible` (they collide but aren't drawn), which is used for clip walls above the arena walls so rocket jumps can't escape:
 ```ts
 interface MapDef {
   id: string;
@@ -225,7 +227,7 @@ interface WeaponDef {
 
 `HitContext` exposes a small API such as `damage(target, amount)`, `teleport(player, pos)`, `swapPositions(a, b)`, `applyImpulse(player, vec)`, `spawnProjectile(...)`, `setPlayerScale(player, s)` and `broadcastEffect(name, data)`. Hooks must never touch Colyseus or sockets directly.
 
-**Starter weapons (v1):** Pistol (hitscan), Shotgun (8 pellets), Rocket Launcher (projectile + splash + knockback).
+**Starter weapons (v1):** Pistol (hitscan), Shotgun (8 pellets), Rocket Launcher (projectile + splash + knockback). Rocket splash falls off linearly with distance to the target's box and is blocked by walls. Your own splash does 0.4× damage (`SELF_BLAST_DAMAGE_SCALE`), so rocket jumps cost about 25 HP.
 **Silly weapons backlog:** Swapper (swap places with the target), Banana Launcher (bouncing projectile), Shrink Ray (target scale 0.5 for 10 s), Yeet Gun (huge knockback, no damage), Boomerang (projectile that returns).
 
 ---
@@ -313,7 +315,8 @@ Each milestone should end with the game in a runnable state and the acceptance c
 - Shotgun and Rocket Launcher (projectiles, splash, knockback).
 - Weapon switching; ammo and reload.
 - Cosmetic effects and basic sounds.
-- ✅ All three weapons work in multiplayer; rockets hit correctly and knock players around.
+- ✅ **Done.** All three weapons work in multiplayer; rockets hit correctly and knock players around.
+- Audio: synthesised with WebAudio (`client/src/audio/sfx.ts`), with no sound files. M toggles mute.
 
 ### M4 — Rooms, modes and deploy
 - Join screen with room codes and mode select.
@@ -355,4 +358,3 @@ Each milestone should end with the game in a runnable state and the acceptance c
 - Subdomain (`game.samhopkins.dev`) or path (`samhopkins.dev/game` via rewrite) for the client?
 - Server region: pick the one closest to where most players will be.
 - Should rooms be public (listed) or private (code-only) in v1? Default: code-only.
-- Is audio in scope for M3, or deferred?

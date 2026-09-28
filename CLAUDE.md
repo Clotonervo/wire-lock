@@ -13,6 +13,7 @@ Requires Node 24+ and pnpm (`npm i -g pnpm`).
 - `pnpm dev:lag` — same, with 150 ms simulated round-trip latency (server `--latency=<ms>` flag)
 - Server dev flags (after `tsx src/index.ts`): `--latency=<ms>`, `--kill-limit=<n>` for short test rounds. `PORT` env var changes the port.
 - Client: `?name=Alice` sets the player name (remembered in localStorage) until the M4 join screen.
+- Controls: WASD, Space, mouse, LMB fire, 1–3 / wheel switch weapons, R reload, Tab scores, M mute, F3 debug.
 - `pnpm build` — typecheck and build all packages (`server/dist`, `client/dist`)
 - `pnpm test` — Vitest (shared simulation tests live in `shared/test/`)
 - `pnpm lint` — ESLint + `tsc` typecheck in every package
@@ -37,3 +38,4 @@ Requires Node 24+ and pnpm (`npm i -g pnpm`).
 - F3 in the client shows fps, ping, pending inputs, server tick and prediction correction. Correction should stay ~0; anything larger means client and server simulations diverged.
 - In dev builds the `Game` instance is `window.game`, which is handy for scripted checks: set `game.input.locked = true` and dispatch `KeyboardEvent`s to move without pointer lock.
 - Background tabs don't run `requestAnimationFrame`, so they don't simulate or send input.
+- `shared/src/playerStep.ts` (`stepInput`) is the per-input order both sides share. Anything the owner must predict has to go through it, and its inputs must be synced at full precision. A quick way to catch divergence: a headless client that runs `stepInput` locally and compares against the server state at each `lastProcessedSeq`; it should match exactly.
