@@ -25,13 +25,38 @@ export const PlayerState = schema(
     away: t.boolean(),
     /** Server tick at which a dead player respawns; 0 when not waiting to respawn. */
     respawnTick: t.number(),
+    /** Equipped weapon id (weapons[slot]), for other players' views. */
     weapon: t.string(),
+    // Arms (shared/src/arms.ts), synced in full so the owner can predict firing, ammo and reloads.
+    weapons: t.array("string"),
+    ammo: t.array("number"),
+    slot: t.uint8(),
+    cooldownMs: t.float64(),
+    reloadMs: t.float64(),
     kills: t.uint16(),
     deaths: t.uint16(),
   },
   "PlayerState",
 );
 export type PlayerState = SchemaType<typeof PlayerState>;
+
+/** A live projectile. Keyed `${owner}:${shotSeq}` in ArenaState.projectiles. */
+export const ProjectileState = schema(
+  {
+    owner: t.string(),
+    weapon: t.string(),
+    shotSeq: t.number(),
+    x: t.float64(),
+    y: t.float64(),
+    z: t.float64(),
+    vx: t.float64(),
+    vy: t.float64(),
+    vz: t.float64(),
+    ageMs: t.float64(),
+  },
+  "ProjectileState",
+);
+export type ProjectileState = SchemaType<typeof ProjectileState>;
 
 export type RoundPhase = "waiting" | "playing" | "ended";
 
@@ -50,6 +75,7 @@ export const ArenaState = schema(
     /** Winner of the last round (session id), or empty for a draw / no round yet. */
     winner: t.string(),
     players: t.map(PlayerState),
+    projectiles: t.map(ProjectileState),
   },
   "ArenaState",
 );

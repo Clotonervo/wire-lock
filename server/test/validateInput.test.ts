@@ -11,6 +11,7 @@ const valid = {
   pitch: -0.2,
   fire: false,
   altFire: false,
+  reload: false,
 };
 
 describe("sanitizeInput", () => {
@@ -37,6 +38,11 @@ describe("sanitizeInput", () => {
     const cmd = sanitizeInput({ ...valid, pitch: 5, yaw: 3 * Math.PI });
     expect(cmd?.pitch).toBe(MAX_PITCH);
     expect(cmd?.yaw).toBeCloseTo(Math.PI);
+  });
+
+  it("keeps a valid weapon slot and drops a negative one", () => {
+    expect(sanitizeInput({ ...valid, weaponSlot: 2 })?.weaponSlot).toBe(2);
+    expect(sanitizeInput({ ...valid, weaponSlot: -1 })).not.toHaveProperty("weaponSlot");
   });
 
   it("treats non-boolean flags as false and drops unknown fields", () => {

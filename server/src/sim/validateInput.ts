@@ -42,7 +42,8 @@ export function sanitizeInput(raw: unknown): InputCmd | null {
     pitch: clamp(pitch, -MAX_PITCH, MAX_PITCH),
     fire: raw.fire === true,
     altFire: raw.altFire === true,
+    reload: raw.reload === true,
   };
-  if (Number.isSafeInteger(raw.weaponSlot)) cmd.weaponSlot = raw.weaponSlot as number;
+  if (Number.isSafeInteger(raw.weaponSlot) && (raw.weaponSlot as number) >= 0) cmd.weaponSlot = raw.weaponSlot as number;
   return cmd;
 }
