@@ -1,0 +1,23 @@
+# Render Blueprint for the game server (free web service, Frankfurt).
+# Render: New > Blueprint > pick this repo. Pushes to main redeploy when server code changes.
+services:
+  - type: web
+    name: wire-lock-server
+    runtime: docker
+    plan: free
+    region: frankfurt
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    autoDeployTrigger: commit
+    buildFilter:
+      paths:
+        - server/**
+        - shared/**
+        - Dockerfile
+        - package.json
+        - pnpm-lock.yaml
+        - pnpm-workspace.yaml
+    envVars:
+      # Web origins allowed to connect (comma-separated). Add the Vercel URL too if you play from it directly.
+      - key: ALLOWED_ORIGINS
+        value: https://game.samhopkins.dev

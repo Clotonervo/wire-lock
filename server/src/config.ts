@@ -1,9 +1,12 @@
 /**
- * Process-level dev flags, parsed once from argv. Read here rather than from
- * room create options so clients can't set them.
+ * Process-level configuration, read once at start-up. Dev flags come from argv
+ * and deployment settings from the environment; neither can be set by clients.
  *
  *   --latency=<ms>     simulated round-trip latency (COLYSEUS_LATENCY also works)
  *   --kill-limit=<n>   override the mode's score limit, for quick test rounds
+ *   PORT               port to listen on (Render sets this)
+ *   ALLOWED_ORIGINS    comma-separated web origins allowed to connect, e.g.
+ *                      "https://game.samhopkins.dev". Unset = allow any (development).
  */
 function numberFlag(name: string): number | undefined {
   const arg = process.argv.find((a) => a.startsWith(`--${name}=`));
@@ -12,7 +15,17 @@ function numberFlag(name: string): number | undefined {
   return Number.isFinite(v) && v > 0 ? v : undefined;
 }
 
+function listEnv(name: string): string[] | undefined {
+  const list = process.env[name]
+    ?.split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return list && list.length > 0 ? list : undefined;
+}
+
 export const config = {
   latencyMs: numberFlag("latency"),
   killLimit: numberFlag("kill-limit"),
+  port: Number(process.env.PORT) || undefined,
+  allowedOrigins: listEnv("ALLOWED_ORIGINS"),
 };

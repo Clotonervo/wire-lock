@@ -12,11 +12,12 @@ Requires Node 24+ and pnpm (`npm i -g pnpm`).
 - `pnpm dev` — server (`ws://localhost:2567`, tsx watch) + client (`http://localhost:5173`, Vite) together
 - `pnpm dev:lag` — same, with 150 ms simulated round-trip latency (server `--latency=<ms>` flag)
 - Server dev flags (after `tsx src/index.ts`): `--latency=<ms>`, `--kill-limit=<n>` for short test rounds. `PORT` env var changes the port.
-- Client: `?name=Alice` sets the player name (remembered in localStorage) until the M4 join screen.
+- Client: the lobby asks for a name (remembered in localStorage). `?room=CODE` opens straight to joining that room.
 - Controls: WASD, Space, mouse, LMB fire, 1–3 / wheel switch weapons, R reload, Tab scores, M mute, F3 debug.
 - `pnpm build` — typecheck and build all packages (`server/dist`, `client/dist`)
 - `pnpm test` — Vitest (shared simulation tests live in `shared/test/`)
 - `pnpm lint` — ESLint + `tsc` typecheck in every package
+- Deploying: see [DEPLOY.md](DEPLOY.md) (Render for the server, Vercel for the client). Server env: `PORT`, `ALLOWED_ORIGINS`. Client build env: `VITE_SERVER_URL`.
 
 ## Layout
 

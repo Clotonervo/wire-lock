@@ -12,3 +12,4 @@ export type * from "./messages";
 export * from "./arms";
 export * from "./projectile";
 export * from "./playerStep";
+export * from "./roomCode";

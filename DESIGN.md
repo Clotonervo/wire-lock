@@ -37,8 +37,8 @@ A small, silly, multiplayer first-person shooter that runs in the browser. Built
 | Server runtime | Node.js 24+ | `tsx watch` in dev; tsup bundles `server` + `shared` into `server/dist` for prod. |
 | Tests | Vitest | Mainly for `shared` simulation logic. |
 | Lint | ESLint + typescript-eslint | Also enforces `shared/` purity (no Three.js/Colyseus/Node imports, no `Math.random`). |
-| Client hosting | Vercel (separate project) | Subdomain e.g. `game.samhopkins.dev`, or proxied under `/game` from the main site. |
-| Server hosting | Fly.io (or Railway) | Dockerfile in `server/`. Single region to start. |
+| Client hosting | Vercel (separate Hobby project, free) | `game.samhopkins.dev`. Config in `client/vercel.json`. |
+| Server hosting | Render free web service, Frankfurt | Root `Dockerfile` plus `render.yaml` blueprint. Free instances sleep after ~15 min idle, and the client shows a "waking up" screen while it cold-starts. Must stay a single instance, because rooms live in memory. See DEPLOY.md. |
 
 Use the current stable versions of each dependency at scaffold time and pin them in the lockfile.
 
@@ -319,9 +319,11 @@ Each milestone should end with the game in a runnable state and the acceptance c
 - Audio: synthesised with WebAudio (`client/src/audio/sfx.ts`), with no sound files. M toggles mute.
 
 ### M4 — Rooms, modes and deploy
-- Join screen with room codes and mode select.
-- Gun Game and One in the Chamber.
-- Dockerfile; deploy the server to Fly.io; deploy the client to Vercel as its own project; configure `VITE_SERVER_URL` and CORS/origin checks.
+- Join screen with room codes and mode select. Rooms are private (code-only), with 4-letter codes from an alphabet without I/O, joined via `?room=CODE` links. The pause menu shows the code and a "Copy invite link" button. There are at most `MAX_ROOMS` rooms per server.
+- A "waking up the server" screen polls `/health` until the (possibly sleeping) server answers.
+- Gun Game (rocket → shotgun → pistol → a new melee weapon; a melee kill wins) and One in the Chamber (pistol, 1 bullet, one-hit kills, +1 bullet per kill, 3 lives, last standing wins; eliminated players spectate).
+- Dockerfile; deploy the server to Render and the client to Vercel as its own project; configure `VITE_SERVER_URL`, plus `ALLOWED_ORIGINS` for the WebSocket origin check and matchmaking CORS.
+- Order: rooms and deploy first (with Deathmatch), then the two modes, tested on the live deployment.
 - ✅ A friend can open a link and join a room on the live deployment.
 
 ### M5+ — Silly stuff (open-ended)
@@ -355,6 +357,4 @@ Each milestone should end with the game in a runnable state and the acceptance c
 
 ## 13. Open questions
 
-- Subdomain (`game.samhopkins.dev`) or path (`samhopkins.dev/game` via rewrite) for the client?
-- Server region: pick the one closest to where most players will be.
-- Should rooms be public (listed) or private (code-only) in v1? Default: code-only.
+- Render's free instances get a small CPU share. Watch the tick timing with a full room, and move to the cheapest paid tier if it can't keep 30 Hz.

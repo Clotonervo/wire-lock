@@ -2,15 +2,17 @@ import { getMap } from "@wire-lock/shared";
 import { Sfx } from "./audio/sfx";
 import { Game } from "./game";
 import { InputController } from "./input/input";
-import { connect } from "./net/connection";
+import type { ArenaRoom } from "./net/connection";
 import type { ArenaStateView } from "./net/stateTypes";
 import { createScene } from "./render/scene";
 import { DebugOverlay } from "./ui/debugOverlay";
 import { Hud } from "./ui/hud";
+import { Lobby } from "./ui/lobby";
 import { Scoreboard } from "./ui/scoreboard";
 
 const container = document.getElementById("game");
 const status = document.getElementById("status");
+const lobbyRoot = document.getElementById("lobby");
 const lockPrompt = document.getElementById("lock-prompt");
 const hudRoot = document.getElementById("hud");
 
@@ -18,13 +20,30 @@ function setStatus(text: string) {
   if (status) status.textContent = text;
 }
 
-async function main() {
-  if (!container || !hudRoot) throw new Error("#game or #hud container missing");
+/** Shows the room code in the pause menu, with a button that copies an invite link. */
+function showRoomInfo(room: ArenaRoom) {
+  const code = document.getElementById("room-code");
+  const copy = document.getElementById("copy-invite");
+  if (code) code.textContent = room.roomId;
+  copy?.addEventListener("click", (e) => {
+    e.stopPropagation(); // don't also grab the pointer
+    const link = `${location.origin}${location.pathname}?room=${room.roomId}`;
+    navigator.clipboard.writeText(link).then(
+      () => (copy.textContent = "Link copied!"),
+      () => (copy.textContent = link),
+    );
+  });
+}
 
-  const room = await connect();
-  console.log(`connected: ${room.sessionId}`);
-  setStatus("");
-  room.onLeave(() => setStatus("disconnected"));
+async function main() {
+  if (!container || !hudRoot || !lobbyRoot) throw new Error("#game, #hud or #lobby container missing");
+
+  const lobby = new Lobby(lobbyRoot);
+  const room = await lobby.run();
+  lobby.hide();
+  console.log(`connected: ${room.sessionId} in room ${room.roomId}`);
+  room.onLeave(() => setStatus("Disconnected. Reload the page to rejoin."));
+  showRoomInfo(room);
 
   // Wait for the first full state so we know which map to build.
   const state = await new Promise<ArenaStateView>((resolve) => {
@@ -44,10 +63,13 @@ async function main() {
   const sfx = new Sfx();
   input.onGesture = () => sfx.unlock();
   input.onMuteToggle = () => sfx.toggleMute();
-  lockPrompt?.addEventListener("click", () => {
-    sfx.unlock();
-    input.requestLock();
-  });
+  if (lockPrompt) {
+    lockPrompt.hidden = false;
+    lockPrompt.addEventListener("click", () => {
+      sfx.unlock();
+      input.requestLock();
+    });
+  }
 
   const ui = { overlay, hud: new Hud(hudRoot), scoreboard: new Scoreboard(document.body), sfx };
   const game = new Game(room, map, view, input, ui);
@@ -58,5 +80,5 @@ async function main() {
 
 main().catch((err: unknown) => {
   console.error("startup failed", err);
-  setStatus("connection failed — is the server running?");
+  setStatus("Something went wrong. Reload the page to try again.");
 });

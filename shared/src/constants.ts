@@ -17,6 +17,12 @@ export const PATCH_RATE_MS = 50;
 
 /** Maximum players per room (DESIGN.md §12). */
 export const MAX_PLAYERS_PER_ROOM = 8;
+/** Maximum rooms one server hosts at once (DESIGN.md §12). */
+export const MAX_ROOMS = 20;
+
+/** Room codes: short, upper-case, and without look-alike letters (no I or O). */
+export const ROOM_CODE_LENGTH = 4;
+export const ROOM_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ";
 
 /** Remote players are rendered this far in the past (DESIGN.md §5.4). */
 export const INTERP_DELAY_MS = 100;

@@ -1,8 +1,10 @@
-import { Room, type Client } from "@colyseus/core";
+import { Room, ServerError, type Client } from "@colyseus/core";
 import {
   AWAY_TIMEOUT_MS,
   DEFAULT_MAP_ID,
   DEFAULT_MODE_ID,
+  MAX_ROOMS,
+  MODES,
   INPUT_BACKLOG,
   KILL_Y,
   MAX_HEALTH,
@@ -46,6 +48,7 @@ import { resolveHitscan } from "../sim/hitscan";
 import { createMode, type GameMode, type ModeRoom } from "../sim/modes";
 import { sanitizeName } from "../sim/names";
 import { sanitizeInput } from "../sim/validateInput";
+import { activeRoomCount, claimRoomCode, releaseRoomCode } from "./roomCodes";
 
 const PLAYER_COLORS = ["#e6194b", "#3cb44b", "#ffe119", "#4363d8", "#f58231", "#911eb4", "#46f0f0", "#f032e6"];
 /** Kills by falling out of the world are credited to this weapon id. */
@@ -76,10 +79,16 @@ export class ArenaRoom extends Room<{ state: ArenaState }> {
     input: (client: Client, payload: unknown) => this.receiveInputs(client, payload),
   };
 
-  override onCreate() {
+  override async onCreate(options?: { mode?: unknown }) {
+    if (activeRoomCount() >= MAX_ROOMS) throw new ServerError(503, "The server is full right now. Try again in a bit.");
+    // Rooms are code-only (DESIGN.md §13): a short code instead of Colyseus's id, and never matched at random.
+    this.roomId = claimRoomCode();
+    await this.setPrivate(true);
+
+    const requested = typeof options?.mode === "string" && options.mode in MODES ? options.mode : DEFAULT_MODE_ID;
     const map = getMap(DEFAULT_MAP_ID);
-    const mode = createMode(DEFAULT_MODE_ID, config.killLimit ? { scoreLimit: config.killLimit } : {});
-    if (!map || !mode) throw new Error(`unknown map ${DEFAULT_MAP_ID} or mode ${DEFAULT_MODE_ID}`);
+    const mode = createMode(requested, config.killLimit ? { scoreLimit: config.killLimit } : {});
+    if (!map || !mode) throw new Error(`unknown map ${DEFAULT_MAP_ID} or mode ${requested}`);
     this.map = map;
     this.mode = mode;
 
@@ -139,6 +148,7 @@ export class ArenaRoom extends Room<{ state: ArenaState }> {
   }
 
   override onDispose() {
+    releaseRoomCode(this.roomId);
     log("room.dispose", { roomId: this.roomId });
   }
 
