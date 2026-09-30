@@ -3,7 +3,8 @@ export interface ScoreRow {
   name: string;
   kills: number;
   deaths: number;
-  status: "" | "dead" | "away";
+  /** "away", "out", "dead", hearts for lives left, or empty. */
+  status: string;
   me: boolean;
 }
 

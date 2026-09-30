@@ -89,6 +89,10 @@ export class Lobby {
 
       const mode = el("select");
       for (const m of Object.values(MODES)) mode.append(el("option", { value: m.id, textContent: m.name, selected: m.id === DEFAULT_MODE_ID }));
+      const blurb = el("p", { className: "lobby-note" });
+      const showBlurb = () => (blurb.textContent = MODES[mode.value]?.blurb ?? "");
+      mode.addEventListener("change", showBlurb);
+      showBlurb();
       const createBtn = el("button", { type: "button", textContent: "Create room", className: invited ? "secondary" : "primary" });
 
       const code = el("input", { type: "text", maxLength: ROOM_CODE_LENGTH, placeholder: "CODE", value: invited ?? "", className: "lobby-code", autocomplete: "off" });
@@ -137,8 +141,8 @@ export class Lobby {
       nameLabel.append(name);
 
       const sections = invited
-        ? [joinRow, el("p", { className: "lobby-or", textContent: "or start your own" }), createRow]
-        : [createRow, el("p", { className: "lobby-or", textContent: "or join with a code" }), joinRow];
+        ? [joinRow, el("p", { className: "lobby-or", textContent: "or start your own" }), createRow, blurb]
+        : [createRow, blurb, el("p", { className: "lobby-or", textContent: "or join with a code" }), joinRow];
       this.panel.replaceChildren(el("h1", { textContent: "Wire Lock" }), nameLabel, ...sections, error);
       (invited ? joinBtn : name.value ? createBtn : name).focus();
     });

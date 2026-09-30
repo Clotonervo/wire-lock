@@ -9,7 +9,8 @@ export type SoundName =
   | "kill"
   | "hurt"
   | "reload"
-  | "switch";
+  | "switch"
+  | "melee";
 
 const MUTE_KEY = "wire-lock.muted";
 const MASTER_VOLUME = 0.5;
@@ -106,6 +107,9 @@ export class Sfx {
       case "reload":
         this.noiseBurst(out, t, { type: "highpass", freq: 3000, q: 0.7 }, 0.35, 0.03);
         this.noiseBurst(out, t + 0.15, { type: "highpass", freq: 2500, q: 0.7 }, 0.35, 0.04);
+        break;
+      case "melee":
+        this.noiseBurst(out, t, { type: "bandpass", freq: 2200, freqEnd: 500, q: 1.5 }, 0.45, 0.16);
         break;
       case "switch":
         this.noiseBurst(out, t, { type: "highpass", freq: 3500, q: 0.7 }, 0.25, 0.025);

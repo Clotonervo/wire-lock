@@ -37,6 +37,10 @@ export interface PlayerView {
   reloadMs: number;
   kills: number;
   deaths: number;
+  /** Lives left this round; -1 when the mode doesn't use lives. */
+  lives: number;
+  /** Out of the round (spectating) until the next one. */
+  eliminated: boolean;
 }
 
 export interface ProjectileView {

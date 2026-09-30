@@ -8,8 +8,12 @@ import {
   TICK_MS,
   applySpread,
   currentWeapon,
+  GUN_GAME_LADDER,
   getMode,
   getWeapon,
+  gunGameLevel,
+  gunGame,
+  oneInTheChamber,
   lerp,
   lerpVec3,
   playerBox,
@@ -494,8 +498,11 @@ export class Game {
     let centerText = "";
     let centerSub = "";
     let active = 0;
+    let standing = 0;
     s.players.forEach((p) => {
-      if (!p.away) active++;
+      if (p.away) return;
+      active++;
+      if (!p.eliminated) standing++;
     });
 
     if (s.phase === "waiting") {
@@ -503,13 +510,16 @@ export class Game {
       roundSub = `Waiting for players (${active}/${mode?.minPlayers ?? 2})`;
     } else if (s.phase === "playing") {
       roundText = s.phaseEndTick > 0 ? formatClock(secondsUntil(s.phaseEndTick)) : "";
-      roundSub = `${mode?.name ?? ""}${s.scoreLimit ? ` · first to ${s.scoreLimit}` : ""}`;
+      roundSub = this.modeLine(s.modeId, s.scoreLimit, me, standing);
     } else {
       roundText = s.winner ? `${this.nameOf(s.winner)} wins!` : "Draw!";
       roundSub = `Next round in ${secondsUntil(s.phaseEndTick)}`;
     }
 
-    if (me && !alive && s.phase !== "ended" && !me.away) {
+    if (me?.eliminated && s.phase === "playing") {
+      centerText = "Eliminated";
+      centerSub = "You're out until the next round";
+    } else if (me && !alive && s.phase !== "ended" && !me.away) {
       centerText = this.lastKillerName ? `Fragged by ${this.lastKillerName}` : "You died";
       centerSub = me.respawnTick > 0 ? `Respawning in ${secondsUntil(me.respawnTick)}` : "";
     }
@@ -517,9 +527,19 @@ export class Game {
     const ammo = arms?.ammo[arms.current] ?? 0;
     this.ui.hud.update({
       health: me?.health ?? 0,
+      lives: s.phase === "playing" ? (me?.lives ?? -1) : -1,
       alive,
       weaponName: weapon?.name ?? "",
-      ammo: arms && arms.reloadMs > 0 ? "Reloading…" : ammo === INFINITE_AMMO ? "∞" : `${ammo} / ${weapon?.magazine ?? 0}`,
+      ammo:
+        arms && arms.reloadMs > 0
+          ? "Reloading…"
+          : ammo === INFINITE_AMMO
+            ? weapon?.kind === "melee"
+              ? ""
+              : "∞"
+            : weapon?.reloadMs === undefined
+              ? String(ammo) // no reloading: just a count of what you have
+              : `${ammo} / ${weapon.magazine ?? 0}`,
       slots: (arms?.slots ?? []).map((id, i) => ({ name: getWeapon(id)?.name ?? id, active: i === arms?.current })),
       roundText,
       roundSub,
@@ -537,12 +557,27 @@ export class Game {
           name: p.name,
           kills: p.kills,
           deaths: p.deaths,
-          status: p.away ? "away" : p.alive ? "" : "dead",
+          status: p.away ? "away" : p.eliminated ? "out" : !p.alive ? "dead" : p.lives >= 0 && s.phase === "playing" ? "♥".repeat(p.lives) : "",
           me: id === this.room.sessionId,
         });
       });
     }
     this.ui.scoreboard.update(showBoard, s.phase === "ended" ? roundText : mode?.name ?? "Scores", rows);
+  }
+
+  /** The mode-specific line under the round timer. */
+  private modeLine(modeId: string, scoreLimit: number, me: PlayerView | undefined, standing: number): string {
+    const mode = getMode(modeId);
+    if (modeId === gunGame.id && me) {
+      const level = gunGameLevel(me.kills);
+      const step = GUN_GAME_LADDER[level];
+      const done = GUN_GAME_LADDER.slice(0, level).reduce((n, st) => n + st.kills, 0);
+      const toGo = (step?.kills ?? 0) - (me.kills - done);
+      const next = level === GUN_GAME_LADDER.length - 1 ? "a kill wins" : `${toGo} more to level up`;
+      return `Gun Game · weapon ${level + 1}/${GUN_GAME_LADDER.length} · ${next}`;
+    }
+    if (modeId === oneInTheChamber.id) return `One in the Chamber · ${standing} still standing`;
+    return `${mode?.name ?? ""}${scoreLimit ? ` · first to ${scoreLimit}` : ""}`;
   }
 
   private updateStats(now: number): void {

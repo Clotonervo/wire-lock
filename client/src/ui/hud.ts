@@ -6,6 +6,8 @@ const LOW_HEALTH = 30;
 
 export interface HudView {
   health: number;
+  /** Lives left (shown as hearts); -1 to hide. */
+  lives: number;
   alive: boolean;
   weaponName: string;
   ammo: string;
@@ -22,6 +24,7 @@ export interface HudView {
 /** In-game HUD (DESIGN.md §9.3). Plain DOM; every player-supplied string is set as text, never HTML. */
 export class Hud {
   private readonly health = el("div", "hud-health");
+  private readonly lives = el("div", "hud-lives");
   private readonly weapon = el("div", "hud-weapon");
   private readonly weaponName = el("div", "hud-weapon-name");
   private readonly ammo = el("div", "hud-ammo");
@@ -43,13 +46,14 @@ export class Hud {
     top.append(this.round, this.roundSub);
     const middle = el("div", "hud-middle");
     middle.append(this.center, this.centerSub);
-    root.append(this.damage, top, this.feed, middle, this.health, this.slots, this.weapon);
+    root.append(this.damage, top, this.feed, middle, this.lives, this.health, this.slots, this.weapon);
     this.crosshair = document.getElementById("crosshair");
   }
 
   update(v: HudView): void {
     setText(this.health, v.alive ? String(v.health) : "");
     this.health.classList.toggle("low", v.alive && v.health <= LOW_HEALTH);
+    setText(this.lives, v.lives >= 0 ? "♥".repeat(v.lives) : "");
     setText(this.weaponName, v.alive ? v.weaponName : "");
     setText(this.ammo, v.alive ? v.ammo : "");
     const slotsKey = v.alive ? JSON.stringify(v.slots) : "";
