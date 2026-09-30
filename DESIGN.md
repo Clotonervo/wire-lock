@@ -253,6 +253,10 @@ interface GameMode {
 ```
 
 **v1 mode:** Free-for-all Deathmatch (first to 20 kills or 5 minutes).
+
+**Implemented (M4):** the room hands modes a read-only `ModeRoom` (players, phase, timer) plus a small `ModeApi` (`setLoadout`, `addAmmo`, `setKills`, `setLives`, `eliminate`), so mode code never touches Colyseus state. Rules live in `server/src/sim/modes/`, and the data both sides need (names, blurbs, the Gun Game ladder) lives in `shared/src/modes/`. Mode changes to weapons and ammo reach the owner's prediction through the normal reconcile, because arms are synced state.
+- **Gun Game:** Rocket Launcher ×2 → Shotgun ×2 → Pistol ×2 → Wrench. A wrench kill wins, and getting wrenched costs the victim a kill.
+- **One in the Chamber:** Chamber Pistol (one-hit, no reloads) plus Wrench. You start with 1 bullet and get +1 per kill. 3 lives; eliminated players spectate, and people joining mid-round wait. Last standing wins, or on timeout the most lives, then most kills.
 **Backlog:** Gun Game (each kill advances your weapon), One in the Chamber (pistol, 1 bullet, one-hit kills, +1 ammo per kill), Low Gravity, Everyone Tiny, King of the Hill.
 
 The mode is chosen when a room is created (a query param or lobby option) and is exposed in synced state so the client can show mode-specific HUD.
@@ -324,7 +328,7 @@ Each milestone should end with the game in a runnable state and the acceptance c
 - Gun Game (rocket → shotgun → pistol → a new melee weapon; a melee kill wins) and One in the Chamber (pistol, 1 bullet, one-hit kills, +1 bullet per kill, 3 lives, last standing wins; eliminated players spectate).
 - Dockerfile; deploy the server to Render and the client to Vercel as its own project; configure `VITE_SERVER_URL`, plus `ALLOWED_ORIGINS` for the WebSocket origin check and matchmaking CORS.
 - Order: rooms and deploy first (with Deathmatch), then the two modes, tested on the live deployment.
-- ✅ A friend can open a link and join a room on the live deployment.
+- ✅ A friend can open a link and join a room on the live deployment. Deployed at https://game.samhopkins.dev; all three modes playable.
 
 ### M5+ — Silly stuff (open-ended)
 - Work through the silly weapons and modes backlog.
