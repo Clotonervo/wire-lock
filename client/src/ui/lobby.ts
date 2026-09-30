@@ -6,6 +6,8 @@ const PING_TIMEOUT_MS = 5000;
 const PING_RETRY_MS = 2000;
 /** After this long, say something might be wrong (but keep trying). */
 const SLOW_WAKE_MS = 90_000;
+/** Consecutive "answering but refusing us" pings before we say so (the proxy can do it briefly while waking). */
+const BLOCKED_PINGS_BEFORE_HINT = 3;
 
 function loadName(): string {
   try {
@@ -55,16 +57,24 @@ export class Lobby {
     this.panel.replaceChildren(el("h1", { textContent: "Wire Lock" }), title, detail);
 
     const start = performance.now();
+    let blockedPings = 0;
     const timer = window.setInterval(() => {
       const s = Math.round((performance.now() - start) / 1000);
       title.textContent = `Waking up the server… ${s}s`;
       detail.textContent =
-        performance.now() - start > SLOW_WAKE_MS
-          ? "This is taking longer than usual. Still trying. Check your connection if it doesn't come up soon."
-          : "The server sleeps when nobody is playing. The first visit can take up to a minute.";
+        blockedPings >= BLOCKED_PINGS_BEFORE_HINT
+          ? `The server is answering but won't accept connections from ${location.origin}. Its ALLOWED_ORIGINS setting needs to include this address.`
+          : performance.now() - start > SLOW_WAKE_MS
+            ? "This is taking longer than usual. Still trying. Check your connection if it doesn't come up soon."
+            : "The server sleeps when nobody is playing. The first visit can take up to a minute.";
     }, 1000);
     try {
-      while (!(await pingServer(PING_TIMEOUT_MS))) await new Promise((r) => setTimeout(r, PING_RETRY_MS));
+      for (;;) {
+        const status = await pingServer(PING_TIMEOUT_MS);
+        if (status === "ok") break;
+        blockedPings = status === "blocked" ? blockedPings + 1 : 0;
+        await new Promise((r) => setTimeout(r, PING_RETRY_MS));
+      }
     } finally {
       window.clearInterval(timer);
     }
