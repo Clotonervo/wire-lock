@@ -1,14 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { testArena } from "@wire-lock/shared";
 import { createDeathmatch, farthestSpawn } from "../src/sim/modes/deathmatch";
-import type { ModePlayer, ModeRoom } from "../src/sim/modes/types";
+import type { ModeRoom } from "../src/sim/modes/types";
+import { fakePlayer, fakeRoom, type FakePlayer } from "./fakeModeRoom";
 
-function player(id: string, kills: number, pos = { x: 0, y: 0, z: 0 }, alive = true): ModePlayer {
-  return { id, kills, deaths: 0, alive, pos };
+function player(id: string, kills: number, pos = { x: 0, y: 0, z: 0 }, alive = true): FakePlayer {
+  return fakePlayer(id, { kills, pos, alive });
 }
 
-function room(players: ModePlayer[], timeUp = false): ModeRoom {
-  return { map: testArena, players, timeUp };
+function room(players: FakePlayer[], timeUp = false): ModeRoom {
+  return fakeRoom(players, { timeUp });
 }
 
 describe("deathmatch.checkWin", () => {

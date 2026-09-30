@@ -35,6 +35,10 @@ export const PlayerState = schema(
     reloadMs: t.float64(),
     kills: t.uint16(),
     deaths: t.uint16(),
+    /** Lives left this round; -1 when the mode doesn't use lives. */
+    lives: t.int8(),
+    /** Out of the round (spectating) until the next one. */
+    eliminated: t.boolean(),
   },
   "PlayerState",
 );

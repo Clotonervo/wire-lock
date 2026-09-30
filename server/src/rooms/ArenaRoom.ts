@@ -45,7 +45,7 @@ import { config } from "../config";
 import { log } from "../log";
 import { ArenaState, PlayerState, ProjectileState, type RoundPhase } from "../schema/ArenaState";
 import { resolveHitscan } from "../sim/hitscan";
-import { createMode, type GameMode, type ModeRoom } from "../sim/modes";
+import { createMode, type GameMode, type ModeApi, type ModeRoom } from "../sim/modes";
 import { sanitizeName } from "../sim/names";
 import { sanitizeInput } from "../sim/validateInput";
 import { activeRoomCount, claimRoomCode, releaseRoomCode } from "./roomCodes";
@@ -132,6 +132,8 @@ export class ArenaRoom extends Room<{ state: ArenaState }> {
       reloadMs: 0,
       kills: 0,
       deaths: 0,
+      lives: -1,
+      eliminated: false,
     });
     this.state.players.set(id, player);
     this.runtime.set(id, { queue: [], lastQueuedSeq: -1, lastInputTick: this.state.tick });
@@ -178,7 +180,9 @@ export class ArenaRoom extends Room<{ state: ArenaState }> {
       if (!rt) return;
 
       if (!player.away && (tick - rt.lastInputTick) * TICK_MS > AWAY_TIMEOUT_MS) this.goAway(id, player);
-      if (!player.alive && !player.away && player.respawnTick > 0 && tick >= player.respawnTick) this.spawn(id, player);
+      if (!player.alive && !player.away && !player.eliminated && player.respawnTick > 0 && tick >= player.respawnTick) {
+        this.spawn(id, player);
+      }
 
       // Players (and their projectiles) only advance when their inputs arrive, so client prediction replays exactly.
       const count = rt.queue.length > INPUT_BACKLOG ? MAX_INPUTS_PER_TICK : 1;
@@ -195,7 +199,7 @@ export class ArenaRoom extends Room<{ state: ArenaState }> {
     rt.lastInputTick = this.state.tick;
     if (player.away) {
       player.away = false;
-      this.spawn(id, player);
+      if (!player.eliminated) this.spawn(id, player);
       log("player.back", { sessionId: id });
     }
 
@@ -225,13 +229,13 @@ export class ArenaRoom extends Room<{ state: ArenaState }> {
     weapon.onFire?.({ ...api, shooter: id, weaponId: weapon.id, origin, dir: aim });
 
     const ends: Vec3[] = [];
-    if (weapon.kind === "hitscan") {
+    if (weapon.kind !== "projectile") {
       const targets = this.targetsExcept(id);
       const rng = seededRng(this.shotSeed++);
       for (let i = 0; i < (weapon.pellets ?? 1); i++) {
         const dir = applySpread(aim, weapon.spreadRad ?? 0, rng);
         const shot = resolveHitscan(origin, dir, weapon.range ?? 0, this.map.boxes, targets);
-        ends.push(shot.end);
+        if (weapon.kind === "hitscan") ends.push(shot.end); // melee has no tracer
         if (shot.target) this.applyHit(id, shot.target, weapon, shot.end, dir, api);
       }
     }
@@ -413,8 +417,7 @@ export class ArenaRoom extends Room<{ state: ArenaState }> {
         break;
       case "playing": {
         if (!enough) {
-          s.phase = "waiting";
-          s.phaseEndTick = 0;
+          this.enterWarmup();
           break;
         }
         const result = this.mode.checkWin(this.modeRoom());
@@ -424,11 +427,7 @@ export class ArenaRoom extends Room<{ state: ArenaState }> {
       case "ended":
         if (s.tick >= s.phaseEndTick) {
           if (enough) this.startRound();
-          else {
-            s.phase = "waiting";
-            s.phaseEndTick = 0;
-            s.winner = "";
-          }
+          else this.enterWarmup();
         }
         break;
     }
@@ -444,10 +443,26 @@ export class ArenaRoom extends Room<{ state: ArenaState }> {
     s.players.forEach((p, id) => {
       p.kills = 0;
       p.deaths = 0;
+      p.lives = -1;
+      p.eliminated = false;
       if (!p.away) this.spawn(id, p);
     });
+    this.mode.onRoundStart?.(this.modeRoom());
     this.broadcastEvent("roundStart", {});
     log("round.start", { roomId: this.roomId, players: this.activePlayerCount() });
+  }
+
+  /** Back to warm-up (not enough players): nobody stays eliminated, so everyone can play meanwhile. */
+  private enterWarmup() {
+    const s = this.state;
+    s.phase = "waiting";
+    s.phaseEndTick = 0;
+    s.winner = "";
+    s.players.forEach((p) => {
+      if (!p.eliminated) return;
+      p.eliminated = false;
+      p.respawnTick = s.tick + 1;
+    });
   }
 
   private endRound(winner: string) {
@@ -470,11 +485,58 @@ export class ArenaRoom extends Room<{ state: ArenaState }> {
   private modeRoom(): ModeRoom {
     const players: ModeRoom["players"][number][] = [];
     this.state.players.forEach((p, id) => {
-      if (!p.away) players.push({ id, kills: p.kills, deaths: p.deaths, alive: p.alive, pos: { x: p.x, y: p.y, z: p.z } });
+      if (p.away) return;
+      players.push({
+        id,
+        kills: p.kills,
+        deaths: p.deaths,
+        alive: p.alive,
+        lives: p.lives,
+        eliminated: p.eliminated,
+        pos: { x: p.x, y: p.y, z: p.z },
+      });
     });
     const s = this.state;
-    return { map: this.map, players, timeUp: s.phaseEndTick > 0 && s.tick >= s.phaseEndTick };
+    return {
+      map: this.map,
+      phase: s.phase as RoundPhase,
+      players,
+      timeUp: s.phaseEndTick > 0 && s.tick >= s.phaseEndTick,
+      api: this.modeApi,
+    };
   }
+
+  /** What modes may change (DESIGN.md §8). */
+  private readonly modeApi: ModeApi = {
+    setLoadout: (id, weapons) => {
+      const p = this.state.players.get(id);
+      if (!p?.alive) return;
+      const same = p.weapons.length === weapons.length && weapons.every((w, i) => p.weapons[i] === w);
+      if (!same) writeArms(p, createArms(weapons));
+    },
+    addAmmo: (id, weaponId, amount) => {
+      const p = this.state.players.get(id);
+      const slot = p?.weapons.indexOf(weaponId) ?? -1;
+      if (!p || slot < 0) return;
+      p.ammo[slot] = Math.max(0, p.ammo[slot] ?? 0) + amount;
+    },
+    setKills: (id, kills) => {
+      const p = this.state.players.get(id);
+      if (p) p.kills = Math.max(0, kills);
+    },
+    setLives: (id, lives) => {
+      const p = this.state.players.get(id);
+      if (p) p.lives = lives;
+    },
+    eliminate: (id) => {
+      const p = this.state.players.get(id);
+      if (!p) return;
+      p.eliminated = true;
+      p.alive = false;
+      p.health = 0;
+      p.respawnTick = 0;
+    },
+  };
 
   // --- Messaging ---------------------------------------------------------
 
