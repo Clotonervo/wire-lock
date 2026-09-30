@@ -156,7 +156,13 @@ The server validates each command (clamp values, reject absurd `dt`, drop out-of
   - Trade-off: a player's rockets pause if their inputs stop arriving. Away and leaving players' projectiles are removed.
 - **Prediction covers the whole player:** movement, weapons (ammo, cooldown, reload, switch; `shared/src/arms.ts`) and own projectiles. The server syncs all of it at full precision so the client can rewind and replay. Cosmetic effects and sounds fire only when an input is first predicted, never during replays.
 - The client plays muzzle flash, sound and tracer immediately (cosmetic only); damage numbers and kills come from server events.
-- **Later upgrade (not v1):** lag compensation, where the server rewinds other players' positions to what the shooter saw (`serverTime - shooterRTT/2 - INTERP_DELAY`) before raycasting. Colyseus 0.18 ships a `Rewind` helper worth evaluating before hand-rolling this.
+- **Lag compensation (M5, done):** hitscan and melee shots are checked against where targets were in the shooter's view.
+  - The client sends `viewTime` with each firing input: its estimate of server time minus `INTERP_DELAY_MS`. This is exactly the timeline it draws remote players on, so no RTT guesswork is needed.
+  - The server keeps each player's end-of-tick position for the last `MAX_REWIND_MS` (400 ms) in `server/src/sim/lagCompensation.ts`. It interpolates targets to the clamped view time before raycasting.
+  - Targets dead at that moment aren't hittable, and targets dead *now* can't be damaged.
+  - Rockets don't need it: they're real server objects.
+  - Hand-rolled instead of Colyseus's `Rewind`: about 60 lines, and it reuses the tick timeline we already had.
+  - Measured at ~155 ms ping, shooting where a strafing target is drawn: 75% of pistol shots hit with it, 12% without (`--no-lag-comp` flag).
 
 ### 5.6 Events vs state
 - **Synced state (Colyseus Schema):** players (position, yaw, pitch, health, weapon, alive, score, lastProcessedSeq), projectiles, pickups, mode/round state.
@@ -333,7 +339,7 @@ Each milestone should end with the game in a runnable state and the acceptance c
 ### M5+ — Silly stuff (open-ended)
 - Work through the silly weapons and modes backlog.
 - Pickups (health, weapon spawns), jump pads.
-- Lag compensation for hitscan.
+- ~~Lag compensation for hitscan.~~ Done (§5.5).
 - Simple map editor or JSON map loading.
 
 ---

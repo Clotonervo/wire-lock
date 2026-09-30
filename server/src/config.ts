@@ -4,6 +4,7 @@
  *
  *   --latency=<ms>     simulated round-trip latency (COLYSEUS_LATENCY also works)
  *   --kill-limit=<n>   override the mode's score limit, for quick test rounds
+ *   --no-lag-comp      turn off hitscan lag compensation (to compare against)
  *   PORT               port to listen on (Render sets this)
  *   ALLOWED_ORIGINS    comma-separated web origins allowed to connect, e.g.
  *                      "https://game.samhopkins.dev". Unset = allow any (development).
@@ -26,6 +27,7 @@ function listEnv(name: string): string[] | undefined {
 export const config = {
   latencyMs: numberFlag("latency"),
   killLimit: numberFlag("kill-limit"),
+  lagCompensation: !process.argv.includes("--no-lag-comp"),
   port: Number(process.env.PORT) || undefined,
   allowedOrigins: listEnv("ALLOWED_ORIGINS"),
 };

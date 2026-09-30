@@ -26,6 +26,13 @@ export const ROOM_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ";
 
 /** Remote players are rendered this far in the past (DESIGN.md §5.4). */
 export const INTERP_DELAY_MS = 100;
+/**
+ * Lag compensation (DESIGN.md §5.5): hitscan and melee are checked against where
+ * targets were in the shooter's view, rewound at most this far. Anyone with a
+ * longer delay has to lead their shots again.
+ */
+export const MAX_REWIND_MS = 400;
+
 /** How long a remote player may be extrapolated past its last snapshot before freezing. */
 export const MAX_EXTRAPOLATION_MS = TICK_MS;
 

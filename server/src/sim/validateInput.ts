@@ -45,5 +45,7 @@ export function sanitizeInput(raw: unknown): InputCmd | null {
     reload: raw.reload === true,
   };
   if (Number.isSafeInteger(raw.weaponSlot) && (raw.weaponSlot as number) >= 0) cmd.weaponSlot = raw.weaponSlot as number;
+  // Clamped to the rewind window by the room, which knows the current time.
+  if (isFiniteNumber(raw.viewTime)) cmd.viewTime = raw.viewTime;
   return cmd;
 }

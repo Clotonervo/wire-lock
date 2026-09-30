@@ -22,6 +22,12 @@ export interface InputCmd {
   fire: boolean;
   altFire: boolean;
   reload: boolean;
+  /**
+   * Server time (ms) of the world the player was looking at when this input was
+   * sampled: remote players are drawn INTERP_DELAY_MS behind. Sent with shots so
+   * the server can rewind targets to what the shooter saw (lag compensation).
+   */
+  viewTime?: number;
   /** Switch to this slot (0-based); only sent on the tick the player asks to switch. */
   weaponSlot?: number;
 }

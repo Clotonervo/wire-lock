@@ -45,6 +45,7 @@ import { config } from "../config";
 import { log } from "../log";
 import { ArenaState, PlayerState, ProjectileState, type RoundPhase } from "../schema/ArenaState";
 import { resolveHitscan } from "../sim/hitscan";
+import { PositionHistory, rewindTime } from "../sim/lagCompensation";
 import { createMode, type GameMode, type ModeApi, type ModeRoom } from "../sim/modes";
 import { sanitizeName } from "../sim/names";
 import { sanitizeInput } from "../sim/validateInput";
@@ -74,6 +75,7 @@ export class ArenaRoom extends Room<{ state: ArenaState }> {
   private nextColor = 0;
   private nextPlayerNumber = 1;
   private shotSeed = 1;
+  private readonly history = new PositionHistory();
 
   override messages = {
     input: (client: Client, payload: unknown) => this.receiveInputs(client, payload),
@@ -145,6 +147,7 @@ export class ArenaRoom extends Room<{ state: ArenaState }> {
   override onLeave(client: Client) {
     this.state.players.delete(client.sessionId);
     this.runtime.delete(client.sessionId);
+    this.history.remove(client.sessionId);
     this.writeProjectiles(client.sessionId, []);
     log("room.leave", { roomId: this.roomId, sessionId: client.sessionId, players: this.state.players.size });
   }
@@ -193,6 +196,9 @@ export class ArenaRoom extends Room<{ state: ArenaState }> {
 
     this.mode.onTick?.(this.modeRoom(), TICK_DT);
     this.updateRound();
+
+    // Remember where everyone ended this tick (what clients will be shown), for lag compensation.
+    this.state.players.forEach((p, id) => this.history.record(tick, id, { x: p.x, y: p.y, z: p.z }, p.alive));
   }
 
   private applyInput(id: string, player: PlayerState, rt: PlayerRuntime, cmd: InputCmd) {
@@ -220,17 +226,17 @@ export class ArenaRoom extends Room<{ state: ArenaState }> {
     }
     this.writeProjectiles(id, r.projectiles);
 
-    if (r.fired) this.onFired(id, r.fired, r.origin, r.aim);
+    if (r.fired) this.onFired(id, r.fired, r.origin, r.aim, cmd.viewTime);
     for (const e of r.explosions) this.explode(id, e);
   }
 
-  private onFired(id: string, weapon: WeaponDef, origin: Vec3, aim: Vec3) {
+  private onFired(id: string, weapon: WeaponDef, origin: Vec3, aim: Vec3, viewTime: number | undefined) {
     const api = this.weaponApi(id, weapon.id);
     weapon.onFire?.({ ...api, shooter: id, weaponId: weapon.id, origin, dir: aim });
 
     const ends: Vec3[] = [];
     if (weapon.kind !== "projectile") {
-      const targets = this.targetsExcept(id);
+      const targets = this.hitscanTargets(id, viewTime);
       const rng = seededRng(this.shotSeed++);
       for (let i = 0; i < (weapon.pellets ?? 1); i++) {
         const dir = applySpread(aim, weapon.spreadRad ?? 0, rng);
@@ -395,6 +401,22 @@ export class ArenaRoom extends Room<{ state: ArenaState }> {
       s.vz = p.vel.z;
       s.ageMs = p.ageMs;
     }
+  }
+
+  /**
+   * Who a hitscan or melee shot can hit, and where: with lag compensation, each
+   * living target is rewound to where the shooter saw them (DESIGN.md §5.5).
+   */
+  private hitscanTargets(shooter: string, viewTime: number | undefined): ProjectileTarget[] {
+    if (!config.lagCompensation) return this.targetsExcept(shooter);
+    const t = rewindTime(viewTime, this.state.tick * TICK_MS);
+    const targets: ProjectileTarget[] = [];
+    this.state.players.forEach((p, pid) => {
+      if (pid === shooter || !p.alive) return;
+      const pos = this.history.at(pid, t);
+      if (pos) targets.push({ id: pid, pos });
+    });
+    return targets;
   }
 
   private targetsExcept(id: string): ProjectileTarget[] {

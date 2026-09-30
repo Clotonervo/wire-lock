@@ -333,6 +333,10 @@ export class Game {
   private simTick(now: number): void {
     if (!this.predictor) return;
     const sampled = this.input.sample();
+    // The moment of the world we're showing (remote players are drawn this far behind the server),
+    // sent with shots so the server can check hits against what we actually saw.
+    const serverNow = this.serverClock.now(now);
+    const viewTime = sampled.fire && serverNow !== null ? serverNow - INTERP_DELAY_MS : undefined;
     const cmd: InputCmd = {
       seq: this.seq++,
       dt: TICK_DT,
@@ -344,6 +348,7 @@ export class Game {
       altFire: sampled.altFire,
       reload: sampled.reload,
       ...(sampled.weaponSlot === undefined ? {} : { weaponSlot: sampled.weaponSlot }),
+      ...(viewTime === undefined ? {} : { viewTime }),
     };
     this.prevPos = { ...this.predictor.state.pos };
     for (const p of this.predictor.projectiles) {
