@@ -3,10 +3,13 @@ import { WebSocketTransport } from "@colyseus/ws-transport";
 import { DEFAULT_SERVER_PORT, ROOM_NAME } from "@wire-lock/shared";
 import { config } from "./config";
 import { log } from "./log";
+import { metrics } from "./metrics";
 import { ArenaRoom } from "./rooms/ArenaRoom";
 import { activeRoomCount } from "./rooms/roomCodes";
 
 const port = config.port ?? DEFAULT_SERVER_PORT;
+/** The deployed git commit (Render sets RENDER_GIT_COMMIT), so we can tell which build is live. */
+const COMMIT = process.env.RENDER_GIT_COMMIT?.slice(0, 7) ?? "dev";
 const allowed = config.allowedOrigins;
 
 function originAllowed(origin: string | null): boolean {
@@ -36,7 +39,7 @@ const server = new Server({
   express: (app) => {
     // Render's health check, and what the client polls while a sleeping free instance wakes up.
     app.get("/health", (_req, res) => {
-      res.json({ ok: true, rooms: activeRoomCount() });
+      res.json({ ok: true, commit: COMMIT, rooms: activeRoomCount(), ...metrics() });
     });
   },
 });
@@ -49,4 +52,4 @@ if (config.latencyMs) {
 }
 
 await server.listen(port);
-log("server.listen", { port, allowedOrigins: allowed?.join(" ") ?? "any" });
+log("server.listen", { port, commit: COMMIT, allowedOrigins: allowed?.join(" ") ?? "any" });

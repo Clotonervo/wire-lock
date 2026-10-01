@@ -10,6 +10,8 @@ import { Hud } from "./ui/hud";
 import { Lobby } from "./ui/lobby";
 import { RewirePicker } from "./ui/rewirePicker";
 import { Scoreboard } from "./ui/scoreboard";
+import { SettingsPanel } from "./ui/settingsPanel";
+import { loadSettings, type Settings } from "./settings";
 
 const container = document.getElementById("game");
 const status = document.getElementById("status");
@@ -62,6 +64,15 @@ async function main() {
     if (lockPrompt) lockPrompt.hidden = locked;
   };
   const sfx = new Sfx();
+  const apply = (s: Settings) => {
+    input.sensitivity = s.sensitivity;
+    sfx.setVolume(s.volume);
+    view.camera.fov = s.fov;
+    view.camera.updateProjectionMatrix();
+  };
+  const settings = loadSettings();
+  apply(settings);
+  if (lockPrompt) new SettingsPanel(lockPrompt, settings).onChange = apply;
   input.onGesture = () => sfx.unlock();
   input.onMuteToggle = () => sfx.toggleMute();
   if (lockPrompt) {

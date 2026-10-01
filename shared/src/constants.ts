@@ -92,6 +92,11 @@ export const WEAPON_SWITCH_MS = 200;
 
 /** A player with no applied input for this long is marked away and taken out of the world. */
 export const AWAY_TIMEOUT_MS = 8000;
+/**
+ * A round that drops below its mode's minimum players pauses (timer frozen, scores
+ * kept) for up to this long, waiting for people to come back, before resetting to warm-up.
+ */
+export const PAUSE_TIMEOUT_MS = 60_000;
 /** How long the end-of-round screen shows before the next round starts. */
 export const ROUND_END_DELAY_MS = 8000;
 export const MAX_NAME_LENGTH = 16;

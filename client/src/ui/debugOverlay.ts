@@ -36,6 +36,7 @@ export class DebugOverlay {
       `server tick ${s.serverTick}`,
       `correction  ${s.correction.toFixed(4)} (max 1s ${s.maxCorrection.toFixed(4)})`,
       `players     ${s.players}`,
+      `build       ${__BUILD_COMMIT__}`,
     ].join("\n");
   }
 }

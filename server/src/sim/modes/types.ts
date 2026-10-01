@@ -27,7 +27,7 @@ export interface ModeApi {
   eliminate(playerId: string): void;
 }
 
-export type RoundPhase = "waiting" | "playing" | "ended";
+export type RoundPhase = "waiting" | "playing" | "paused" | "ended";
 
 /** The room as a mode sees it. Away players are excluded. */
 export interface ModeRoom {

@@ -80,7 +80,7 @@ export const ProjectileState = schema(
 );
 export type ProjectileState = SchemaType<typeof ProjectileState>;
 
-export type RoundPhase = "waiting" | "playing" | "ended";
+export type RoundPhase = "waiting" | "playing" | "paused" | "ended";
 
 export const ArenaState = schema(
   {
@@ -90,9 +90,9 @@ export const ArenaState = schema(
     scoreLimit: t.uint16(),
     /** Server simulation tick counter. */
     tick: t.number(),
-    /** RoundPhase: warm-up until enough players, then playing, then the end-of-round screen. */
+    /** RoundPhase: warm-up until enough players, then playing (paused while short of players), then the end-of-round screen. */
     phase: t.string(),
-    /** Tick at which the current phase ends (round timer / end screen); 0 = no timer. */
+    /** Tick at which the current phase ends (round timer, pause timeout, end screen); 0 = no timer. */
     phaseEndTick: t.number(),
     /** Winner of the last round (session id), or empty for a draw / no round yet. */
     winner: t.string(),

@@ -13,7 +13,7 @@ export type SoundName =
   | "melee";
 
 const MUTE_KEY = "wire-lock.muted";
-const MASTER_VOLUME = 0.5;
+const DEFAULT_VOLUME = 0.5;
 /** How quickly sounds get quieter with distance (gain = 1 / (1 + d * falloff)). */
 const DISTANCE_FALLOFF = 0.12;
 const MAX_PAN = 0.8;
@@ -39,13 +39,14 @@ export class Sfx {
   private listener: Vec3 = { x: 0, y: 0, z: 0 };
   private listenerYaw = 0;
   muted = loadMuted();
+  private volume = DEFAULT_VOLUME;
 
   /** Browsers only allow audio after a user gesture: call this from one (e.g. the click that locks the pointer). */
   unlock(): void {
     if (!this.ctx) {
       const ctx = new AudioContext();
       this.master = ctx.createGain();
-      this.master.gain.value = this.muted ? 0 : MASTER_VOLUME;
+      this.master.gain.value = this.muted ? 0 : this.volume;
       this.master.connect(ctx.destination);
       const buf = ctx.createBuffer(1, ctx.sampleRate * NOISE_SECONDS, ctx.sampleRate);
       const data = buf.getChannelData(0);
@@ -59,13 +60,18 @@ export class Sfx {
 
   toggleMute(): boolean {
     this.muted = !this.muted;
-    if (this.master) this.master.gain.value = this.muted ? 0 : MASTER_VOLUME;
+    if (this.master) this.master.gain.value = this.muted ? 0 : this.volume;
     try {
       localStorage.setItem(MUTE_KEY, this.muted ? "1" : "0");
     } catch {
       // Not persisted; fine.
     }
     return this.muted;
+  }
+
+  setVolume(volume: number): void {
+    this.volume = volume;
+    if (this.master) this.master.gain.value = this.muted ? 0 : volume;
   }
 
   setListener(pos: Vec3, yaw: number): void {

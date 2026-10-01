@@ -17,6 +17,7 @@ import {
   MAX_MESSAGES_PER_SECOND,
   MAX_PLAYERS_PER_ROOM,
   PATCH_RATE_MS,
+  PAUSE_TIMEOUT_MS,
   PLAYER_HEIGHT,
   REGEN_DELAY_MS,
   REWIRES,
@@ -64,6 +65,7 @@ import type {
 } from "@wire-lock/shared";
 import { config } from "../config";
 import { log } from "../log";
+import { playerJoined, playerLeft, recordTick } from "../metrics";
 import { ArenaState, PlayerState, ProjectileState, type RoundPhase } from "../schema/ArenaState";
 import { scaleDamage } from "../sim/damage";
 import { resolveHitscan } from "../sim/hitscan";
@@ -109,6 +111,8 @@ export class ArenaRoom extends Room<{ state: ArenaState }> {
   private nextColor = 0;
   private nextPlayerNumber = 1;
   private shotSeed = 1;
+  /** Round time left when the round was paused, in ticks (0 = untimed). */
+  private pausedRemainingTicks = 0;
   private readonly history = new PositionHistory();
 
   override messages = {
@@ -200,11 +204,13 @@ export class ArenaRoom extends Room<{ state: ArenaState }> {
       this.spawn(id, player);
     }
     this.mode.onPlayerJoin?.(this.modeRoom(), id);
+    playerJoined();
     log("room.join", { roomId: this.roomId, sessionId: id, name: player.name, players: this.state.players.size });
   }
 
   override onLeave(client: Client) {
     this.state.players.delete(client.sessionId);
+    playerLeft();
     this.runtime.delete(client.sessionId);
     this.history.remove(client.sessionId);
     this.writeProjectiles(client.sessionId, []);
@@ -235,6 +241,12 @@ export class ArenaRoom extends Room<{ state: ArenaState }> {
   // --- Simulation --------------------------------------------------------
 
   private tick() {
+    const started = performance.now();
+    this.simulate();
+    recordTick(performance.now() - started);
+  }
+
+  private simulate() {
     const tick = ++this.state.tick;
 
     this.state.players.forEach((player, id) => {
@@ -571,13 +583,17 @@ export class ArenaRoom extends Room<{ state: ArenaState }> {
         break;
       case "playing": {
         if (!enough) {
-          this.enterWarmup();
+          this.pauseRound();
           break;
         }
         const result = this.mode.checkWin(this.modeRoom());
         if (result) this.endRound(result.winner ?? "");
         break;
       }
+      case "paused":
+        if (enough) this.resumeRound();
+        else if (s.tick >= s.phaseEndTick) this.enterWarmup();
+        break;
       case "ended":
         if (s.tick >= s.phaseEndTick) {
           if (enough) this.startRound();
@@ -616,6 +632,25 @@ export class ArenaRoom extends Room<{ state: ArenaState }> {
     this.mode.onRoundStart?.(this.modeRoom());
     this.broadcastEvent("roundStart", {});
     log("round.start", { roomId: this.roomId, players: this.activePlayerCount() });
+  }
+
+  /**
+   * Someone left or went away mid-round: freeze the round (timer, scores, lives) and wait
+   * up to PAUSE_TIMEOUT_MS for enough players to come back, instead of throwing it away.
+   */
+  private pauseRound() {
+    const s = this.state;
+    this.pausedRemainingTicks = s.phaseEndTick > 0 ? Math.max(1, s.phaseEndTick - s.tick) : 0;
+    s.phase = "paused";
+    s.phaseEndTick = s.tick + Math.round(PAUSE_TIMEOUT_MS / TICK_MS);
+    log("round.pause", { roomId: this.roomId, players: this.activePlayerCount() });
+  }
+
+  private resumeRound() {
+    const s = this.state;
+    s.phase = "playing";
+    s.phaseEndTick = this.pausedRemainingTicks > 0 ? s.tick + this.pausedRemainingTicks : 0;
+    log("round.resume", { roomId: this.roomId, players: this.activePlayerCount() });
   }
 
   /** Back to warm-up (not enough players): nobody stays eliminated, so everyone can play meanwhile. */

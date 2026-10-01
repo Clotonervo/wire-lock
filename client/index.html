@@ -95,6 +95,13 @@
       .lobby-code { text-transform: uppercase; letter-spacing: 0.3em; text-align: center; }
       .lobby-or, .lobby-note { margin: 0; font-size: 13px; opacity: 0.7; }
       .lobby-error { margin: 0; min-height: 1.2em; color: #ff7a7a; font-size: 14px; }
+      .settings-panel {
+        margin-top: 14px; display: grid; gap: 8px; width: min(360px, calc(100vw - 32px));
+        padding: 12px 14px; background: #0009; border-radius: 8px; cursor: default; font-size: 14px;
+      }
+      .settings-panel label { display: grid; grid-template-columns: 1fr 1.2fr 3.5em; align-items: center; gap: 10px; text-align: left; }
+      .settings-panel input[type="range"] { width: 100%; accent-color: #ffd24a; }
+      .settings-panel output { text-align: right; font-variant-numeric: tabular-nums; opacity: 0.9; }
       .room-info { margin-top: 10px; display: flex; align-items: center; gap: 10px; font-size: 15px; }
       #room-code { font-weight: 800; letter-spacing: 0.2em; }
       #copy-invite { font: inherit; font-size: 13px; padding: 5px 10px; border-radius: 5px; border: 1px solid #ffffff50; background: #ffffff18; color: inherit; cursor: pointer; }

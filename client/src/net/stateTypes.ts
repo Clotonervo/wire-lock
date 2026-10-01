@@ -71,7 +71,7 @@ export interface ProjectileView {
   ageMs: number;
 }
 
-export type RoundPhase = "waiting" | "playing" | "ended";
+export type RoundPhase = "waiting" | "playing" | "paused" | "ended";
 
 interface SyncedMap<V> {
   get(key: string): V | undefined;

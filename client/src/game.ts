@@ -54,6 +54,9 @@ const STATS_WINDOW_MS = 1000;
 const UNKNOWN_PLAYER = "someone";
 /** How many of our own explosions to remember, so the server's echo of one we already showed is ignored. */
 const SHOWN_EXPLOSIONS_KEPT = 32;
+/** Spectator chase camera: how far behind and above the watched player. */
+const SPECTATE_DISTANCE = 3.5;
+const SPECTATE_HEIGHT = 2.4;
 
 interface Remote {
   buffer: SnapshotBuffer;
@@ -105,6 +108,9 @@ export class Game {
   private pendingExplosions: { at: Vec3; weapon: string; t: number }[] = [];
   private shownOwnExplosions: string[] = [];
   private wasAlive = false;
+  /** Who we're watching while eliminated (spectator camera). */
+  private spectating: string | null = null;
+  private spectateFireHeld = false;
   private lastHealth = 0;
   private lastKillerName = "";
   private scoreboardHeld = false;
@@ -396,6 +402,40 @@ export class Game {
     const result = this.predictor.apply(cmd, this.canFire);
     this.outbox.push(cmd);
     this.predictedEffects(result, now);
+
+    // While eliminated, a click watches the next player.
+    if (this.me?.eliminated && sampled.fire && !this.spectateFireHeld) this.spectating = this.nextSpectateTarget(this.spectating);
+    this.spectateFireHeld = sampled.fire;
+  }
+
+  /** Living players we could watch, in a stable order. */
+  private spectatable(): string[] {
+    const ids: string[] = [];
+    this.room.state.players.forEach((p, id) => {
+      if (id !== this.room.sessionId && p.alive && !p.away) ids.push(id);
+    });
+    return ids.sort();
+  }
+
+  private nextSpectateTarget(current: string | null): string | null {
+    const ids = this.spectatable();
+    if (ids.length === 0) return null;
+    const i = current ? ids.indexOf(current) : -1;
+    return ids[(i + 1) % ids.length] ?? null;
+  }
+
+  /** Chase camera behind the spectated player. Returns false if there's nobody to watch. */
+  private renderSpectator(): boolean {
+    if (!this.spectating || !this.spectatable().includes(this.spectating)) this.spectating = this.nextSpectateTarget(null);
+    const target = this.spectating ? this.remotes.get(this.spectating) : undefined;
+    if (!target) return false;
+    const p = target.mesh.root.position;
+    const yaw = target.mesh.root.rotation.y;
+    const cam = this.view.camera;
+    // Behind and above, looking at their head.
+    cam.position.set(p.x + Math.sin(yaw) * SPECTATE_DISTANCE, p.y + SPECTATE_HEIGHT, p.z + Math.cos(yaw) * SPECTATE_DISTANCE);
+    cam.lookAt(p.x, p.y + PLAYER_EYE_HEIGHT, p.z);
+    return true;
   }
 
   /** Effects and sounds for what our own input just did. Replays during reconciliation don't come through here. */
@@ -479,9 +519,10 @@ export class Game {
   };
 
   private renderLocal(alpha: number): void {
+    const s = this.room.state;
+    if (this.me?.eliminated && (s.phase === "playing" || s.phase === "paused") && this.renderSpectator()) return;
     const cam = this.view.camera;
-    cam.rotation.y = this.input.yaw;
-    cam.rotation.x = this.input.pitch;
+    cam.rotation.set(this.input.pitch, this.input.yaw, 0);
     if (!this.predictor) return;
 
     const cur = this.predictor.state.pos;
@@ -572,15 +613,18 @@ export class Game {
     } else if (s.phase === "playing") {
       roundText = s.phaseEndTick > 0 ? formatClock(secondsUntil(s.phaseEndTick)) : "";
       roundSub = this.modeLine(s.modeId, s.scoreLimit, me, standing);
+    } else if (s.phase === "paused") {
+      roundText = "Paused";
+      roundSub = `Waiting for players (${active}/${mode?.minPlayers ?? 2}) · round resets in ${secondsUntil(s.phaseEndTick)}s`;
     } else {
       roundText = s.winner ? `${this.nameOf(s.winner)} wins!` : "Draw!";
       roundSub = `Next round in ${secondsUntil(s.phaseEndTick)}`;
     }
 
     const picking = !!me && !alive && !me.away && me.offer.length > 0;
-    if (me?.eliminated && s.phase === "playing") {
+    if (me?.eliminated && (s.phase === "playing" || s.phase === "paused")) {
       centerText = "Eliminated";
-      centerSub = "You're out until the next round";
+      centerSub = this.spectating ? `Spectating ${this.nameOf(this.spectating)} · click to switch` : "You're out until the next round";
     } else if (picking && me.deaths === 0 && me.kills === 0 && !this.lastKillerName) {
       centerText = ""; // the round-start draft: the picker's own title says it all
     } else if (me && !alive && s.phase !== "ended" && !me.away) {

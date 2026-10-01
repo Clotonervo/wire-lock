@@ -1,19 +1,9 @@
 import { MAX_PITCH, clamp, wrapAngle } from "@wire-lock/shared";
 import type { AxisInput } from "@wire-lock/shared";
+import { DEFAULT_SETTINGS } from "../settings";
 
-const SENSITIVITY_KEY = "wire-lock.sensitivity";
-const DEFAULT_SENSITIVITY = 0.002;
 const LEFT_BUTTON = 0;
 const RIGHT_BUTTON = 2;
-
-function loadSensitivity(): number {
-  try {
-    const v = Number(localStorage.getItem(SENSITIVITY_KEY));
-    return Number.isFinite(v) && v > 0 ? v : DEFAULT_SENSITIVITY;
-  } catch {
-    return DEFAULT_SENSITIVITY;
-  }
-}
 
 export interface SampledInput {
   move: { x: AxisInput; z: AxisInput };
@@ -33,7 +23,8 @@ export class InputController {
   yaw = 0;
   pitch = 0;
   locked = false;
-  sensitivity = loadSensitivity();
+  /** Set from the player's settings (client/src/settings.ts). */
+  sensitivity = DEFAULT_SETTINGS.sensitivity;
   onLockChange: (locked: boolean) => void = () => {};
   onDebugToggle: () => void = () => {};
   onScoreboard: (show: boolean) => void = () => {};
