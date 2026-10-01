@@ -11,7 +11,7 @@ Requires Node 24+ and pnpm (`npm i -g pnpm`).
 - `pnpm install` — install all workspace deps
 - `pnpm dev` — server (`ws://localhost:2567`, tsx watch) + client (`http://localhost:5173`, Vite) together
 - `pnpm dev:lag` — same, with 150 ms simulated round-trip latency (server `--latency=<ms>` flag)
-- Server dev flags (after `tsx src/index.ts`): `--latency=<ms>`, `--kill-limit=<n>` for short test rounds, `--no-lag-comp` to compare hit registration without lag compensation. `PORT` env var changes the port.
+- Server dev flags (after `tsx src/index.ts`): `--latency=<ms>`, `--kill-limit=<n>` for short test rounds, `--no-lag-comp` to compare hit registration without lag compensation. `--rewires=overclock,air-dash` gives everyone those Rewires each round (for testing specific ones). `PORT` env var changes the port.
 - Client: the lobby asks for a name (remembered in localStorage). `?room=CODE` opens straight to joining that room.
 - Controls: WASD, Space, mouse, LMB fire, 1–3 / wheel switch weapons, R reload, Tab scores, M mute, F3 debug.
 - `pnpm build` — typecheck and build all packages (`server/dist`, `client/dist`)

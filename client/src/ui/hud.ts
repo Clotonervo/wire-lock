@@ -15,6 +15,8 @@ export interface HudView {
   slots: { name: string; active: boolean }[];
   /** Your Rewires' names, in pick order (stacks repeated). */
   rewires: string[];
+  /** You're on fire (Afterburn). */
+  burning: boolean;
   /** Top-centre line: round timer or phase message. */
   roundText: string;
   roundSub: string;
@@ -58,6 +60,7 @@ export class Hud {
     this.health.classList.toggle("low", v.alive && v.health <= LOW_HEALTH);
     setText(this.lives, v.lives >= 0 ? "♥".repeat(v.lives) : "");
     setText(this.rewires, v.rewires.join(" · "));
+    this.damage.classList.toggle("burning", v.alive && v.burning);
     setText(this.weaponName, v.alive ? v.weaponName : "");
     setText(this.ammo, v.alive ? v.ammo : "");
     const slotsKey = v.alive ? JSON.stringify(v.slots) : "";

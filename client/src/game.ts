@@ -21,6 +21,8 @@ import {
   pointAlong,
   rayBox,
   rayBoxes,
+  rayBoxesHit,
+  reflect,
   shotPattern,
 } from "@wire-lock/shared";
 import type { InputCmd, InputStepResult, MapDef, PlayerMods, Projectile, ServerMessages, Vec3, WeaponDef } from "@wire-lock/shared";
@@ -157,6 +159,15 @@ export class Game {
     this.listen("explode", (m) => this.onExplode(m));
     this.listen("roundStart", () => (this.lastKillerName = ""));
     this.listen("roundEnd", () => {});
+    this.listen("copied", (m) => {
+      const mine = m.player === this.room.sessionId;
+      const what = getRewire(m.rewire)?.name ?? m.rewire;
+      this.ui.hud.addNote(`${mine ? "You" : this.nameOf(m.player)} copied ${this.nameOf(m.from)}'s ${what}!`, mine);
+    });
+    this.listen("secondWind", (m) => {
+      const mine = m.player === this.room.sessionId;
+      this.ui.hud.addNote(`${mine ? "Your" : `${this.nameOf(m.player)}'s`} Second Wind kicked in!`, mine);
+    });
     this.listen("streak", (m) => {
       const mine = m.player === this.room.sessionId;
       this.ui.hud.addNote(`${mine ? "You're" : `${this.nameOf(m.player)} is`} on a ${m.kills}-kill streak! +1 Rewire`, mine);
@@ -315,6 +326,10 @@ export class Game {
       if (from) this.effects.tracer(from, end, now);
       this.effects.impact(end, now);
     }
+    for (const b of m.bounces ?? []) {
+      this.effects.tracer(b.from, b.to, now);
+      this.effects.impact(b.to, now);
+    }
   }
 
   private onExplode(m: ServerMessages["explode"]): void {
@@ -413,6 +428,17 @@ export class Game {
       const end = pointAlong(origin, dir, dist);
       this.effects.tracer(muzzle, end, now);
       if (dist < range) this.effects.impact(end, now);
+      // Ricochet (cosmetic: the server decides whether the bounce hits anyone).
+      if (mods?.ricochets) {
+        const wall = rayBoxesHit(origin, dir, this.map.boxes, dist + 1e-3);
+        if (wall.normal && wall.dist <= dist + 1e-3) {
+          const out = reflect(dir, wall.normal);
+          const from = pointAlong(end, wall.normal, 0.01);
+          const to = pointAlong(from, out, rayBoxes(from, out, this.map.boxes, range - wall.dist));
+          this.effects.tracer(from, to, now);
+          this.effects.impact(to, now);
+        }
+      }
     }
   }
 
@@ -487,9 +513,14 @@ export class Game {
   }
 
   private renderRemote(renderTime: number): void {
-    for (const remote of this.remotes.values()) {
+    const radar = this.predictor?.sim.mods?.radarRange ?? 0;
+    const cam = this.view.camera.position;
+    for (const [id, remote] of this.remotes) {
       const s = remote.buffer.sample(renderTime);
       if (s) remote.mesh.update(s.pos, s.yaw, s.pitch, s.visible);
+      const p = remote.mesh.root.position;
+      remote.mesh.setXRay(radar > 0 && this.wasAlive && Math.hypot(p.x - cam.x, p.y - cam.y, p.z - cam.z) <= radar);
+      remote.mesh.setBurning(this.room.state.players.get(id)?.burning ?? false);
     }
     for (const [key, r] of this.remoteRockets) {
       if (r.goneAt !== undefined && renderTime >= r.goneAt) {
@@ -582,6 +613,7 @@ export class Game {
               : `${ammo} / ${weapon.magazine ?? 0}`,
       slots: (arms?.slots ?? []).map((id, i) => ({ name: getWeapon(id)?.name ?? id, active: i === arms?.current })),
       rewires: me ? rewireNames(me.rewires.toArray()) : [],
+      burning: me?.burning ?? false,
       roundText,
       roundSub,
       centerText,

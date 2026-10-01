@@ -352,7 +352,7 @@ Effects only the server needs (damage multipliers, heal on kill, explode on deat
 | Rewire | Rarity | Effect | Kind |
 |---|---|---|---|
 | Hollow Points | common | +20% damage (stacks ×2) | mods |
-| Magnetic Rounds | rare | Hitscan/melee shots passing within ~2.5° of an enemy's body count as hits. "Aim assist" as bullet magnetism, never camera snapping. | mods (server) |
+| Magnetic Rounds | rare | Hitscan/melee shots that narrowly miss an enemy count as hits (~3.5° to the body's centre line). "Aim assist" as bullet magnetism, never camera snapping. | mods (server) |
 | Headhunter | rare | Hits in the top 20% of the body deal +60% (the game's first headshots) | mods (server) |
 | Point Blank | common | +40% damage within 6 m | mods (server) |
 | Long Shot | common | +30% damage beyond 20 m | mods (server) |

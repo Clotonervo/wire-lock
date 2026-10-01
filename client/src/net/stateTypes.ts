@@ -24,6 +24,9 @@ export interface PlayerView {
   onGround: boolean;
   airJumpsUsed: number;
   jumpHeld: boolean;
+  dashCooldownMs: number;
+  altHeld: boolean;
+  boostMs: number;
   yaw: number;
   pitch: number;
   lastProcessedSeq: number;
@@ -50,6 +53,8 @@ export interface PlayerView {
   /** The current 1-of-3 offer, if a pick is owed. */
   offer: SyncedArray<string>;
   pendingPicks: number;
+  /** On fire (Afterburn). */
+  burning: boolean;
 }
 
 export interface ProjectileView {
@@ -96,6 +101,9 @@ export function readMove(p: PlayerView): PlayerMoveState {
     onGround: p.onGround,
     airJumpsUsed: p.airJumpsUsed,
     jumpHeld: p.jumpHeld,
+    dashCooldownMs: p.dashCooldownMs,
+    altHeld: p.altHeld,
+    boostMs: p.boostMs,
   };
 }
 
