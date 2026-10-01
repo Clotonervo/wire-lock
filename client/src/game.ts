@@ -25,6 +25,7 @@ import {
   rayBoxesHit,
   reflect,
   shotPattern,
+  slotForKey,
 } from "@wire-lock/shared";
 import type { InputCmd, InputStepResult, MapDef, PlayerMods, Projectile, ServerMessages, Vec3, WeaponDef } from "@wire-lock/shared";
 import type { Sfx, SoundName } from "./audio/sfx";
@@ -146,7 +147,11 @@ export class Game {
     input.onScoreboard = (show) => (this.scoreboardHeld = show);
     input.onNumberKey = (n) => {
       if (ui.picker.visible) ui.picker.pickIndex(n - 1);
-      else if (input.locked) input.requestSlot(n - 1);
+      else if (input.locked) {
+        const arms = this.predictor?.sim.arms;
+        const slot = arms && slotForKey(arms, n);
+        if (slot !== undefined) input.requestSlot(slot);
+      }
     };
     ui.picker.onPick = (id) => {
       this.room.send("pickRewire", { id });
@@ -171,8 +176,9 @@ export class Game {
     this.listen("roundStart", () => (this.lastKillerName = ""));
     this.listen("roundEnd", () => {});
     this.listen("pickup", (m) => {
-      if (m.player === this.room.sessionId) this.ui.sfx.play("heal");
-      else this.ui.sfx.play("heal", m.pos);
+      const sound = m.kind === "weapon" ? "weaponPickup" : "heal";
+      if (m.player === this.room.sessionId) this.ui.sfx.play(sound);
+      else this.ui.sfx.play(sound, m.pos);
     });
     this.listen("copied", (m) => {
       const mine = m.player === this.room.sessionId;
@@ -550,7 +556,7 @@ export class Game {
     this.room.state.pickups.forEach((p, key) => {
       let mesh = this.pickups.get(key);
       if (!mesh) {
-        mesh = new PickupMesh(this.view.scene, { x: p.x, y: p.y, z: p.z });
+        mesh = new PickupMesh(this.view.scene, { x: p.x, y: p.y, z: p.z }, p.kind, p.weapon);
         this.pickups.set(key, mesh);
       }
       mesh.update(p.active, now / 1000);
@@ -583,6 +589,8 @@ export class Game {
     for (const [id, remote] of this.remotes) {
       const s = remote.buffer.sample(renderTime);
       if (s) remote.mesh.update(s.pos, s.yaw, s.pitch, s.visible);
+      const state = this.room.state.players.get(id);
+      if (state?.weapon) remote.mesh.setWeapon(state.weapon);
       const p = remote.mesh.root.position;
       remote.mesh.setXRay(radar > 0 && this.wasAlive && Math.hypot(p.x - cam.x, p.y - cam.y, p.z - cam.z) <= radar);
       remote.mesh.setBurning(this.room.state.players.get(id)?.burning ?? false);
@@ -679,7 +687,7 @@ export class Game {
             : weapon?.reloadMs === undefined
               ? String(ammo) // no reloading: just a count of what you have
               : `${ammo} / ${weapon.magazine ?? 0}`,
-      slots: (arms?.slots ?? []).map((id, i) => ({ name: getWeapon(id)?.name ?? id, active: i === arms?.current })),
+      slots: (arms?.slots ?? []).map((id, i) => ({ key: getWeapon(id)?.slotKey ?? i + 1, name: getWeapon(id)?.name ?? id, active: i === arms?.current })),
       rewires: me ? rewireNames(me.rewires.toArray()) : [],
       burning: me?.burning ?? false,
       tracked: alive && this.isTracked(),
@@ -688,7 +696,7 @@ export class Game {
       centerText,
       centerSub,
     });
-    this.viewModel.setWeapon(weapon?.view.color);
+    this.viewModel.setWeapon(weapon);
 
     const showBoard = this.scoreboardHeld || s.phase === "ended";
     const rows: ScoreRow[] = [];

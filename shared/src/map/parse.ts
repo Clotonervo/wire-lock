@@ -1,6 +1,7 @@
 import type { Box, JumpPad, MapDef, PickupDef, SpawnPoint, Vec3 } from "../types";
+import { getWeapon } from "../weapons";
 
-const PICKUP_KINDS: ReadonlySet<string> = new Set(["health"]);
+const PICKUP_KINDS: ReadonlySet<string> = new Set(["health", "weapon"]);
 
 function fail(path: string, what: string): never {
   throw new Error(`invalid map: ${path} ${what}`);
@@ -66,7 +67,13 @@ export function parseMapDef(raw: unknown): MapDef {
       const po = obj(p, `pickups[${i}]`);
       const kind = str(po.kind, `pickups[${i}].kind`);
       if (!PICKUP_KINDS.has(kind)) fail(`pickups[${i}].kind`, `is unknown ("${kind}")`);
-      return { pos: vec(po.pos, `pickups[${i}].pos`), kind: kind as PickupDef["kind"] };
+      const pickup: PickupDef = { pos: vec(po.pos, `pickups[${i}].pos`), kind: kind as PickupDef["kind"] };
+      if (kind === "weapon") {
+        const weapon = str(po.weapon, `pickups[${i}].weapon`);
+        if (!getWeapon(weapon)) fail(`pickups[${i}].weapon`, `is unknown ("${weapon}")`);
+        pickup.weapon = weapon;
+      }
+      return pickup;
     });
   }
   return map;

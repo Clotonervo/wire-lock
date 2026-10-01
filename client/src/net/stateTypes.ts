@@ -73,6 +73,7 @@ export interface ProjectileView {
 
 export interface PickupView {
   kind: string;
+  weapon: string;
   x: number;
   y: number;
   z: number;

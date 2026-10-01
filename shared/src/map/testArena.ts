@@ -54,9 +54,12 @@ export const testArena: MapDef = {
     box(-15, 0, -1, -9, 1.5, 0, WALL),
   ],
   pickups: [
-    { pos: { x: 0, y: 2, z: 0 }, kind: "health" },
+    { pos: { x: 0, y: 0, z: -12 }, kind: "health" },
     { pos: { x: -16, y: 0, z: 8 }, kind: "health" },
     { pos: { x: 16, y: 0, z: -8 }, kind: "health" },
+    { pos: { x: 0, y: 2, z: 0 }, kind: "weapon", weapon: "rocket" },
+    { pos: { x: -16, y: 0, z: -8 }, kind: "weapon", weapon: "shotgun" },
+    { pos: { x: 16, y: 0, z: 8 }, kind: "weapon", weapon: "shotgun" },
   ],
   spawns: [
     spawnFacingCentre(-SPAWN_INSET, -SPAWN_INSET),

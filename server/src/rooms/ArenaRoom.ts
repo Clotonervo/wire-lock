@@ -22,6 +22,7 @@ import {
   PICKUP_HEIGHT,
   PICKUP_RADIUS,
   PICKUP_RESPAWN_MS,
+  WEAPON_PICKUP_RESPAWN_MS,
   PLAYER_HEIGHT,
   REGEN_DELAY_MS,
   REWIRES,
@@ -36,6 +37,7 @@ import {
   applySpread,
   blastEffect,
   createArms,
+  giveWeapon,
   foldMods,
   getMap,
   getRewire,
@@ -149,7 +151,10 @@ export class ArenaRoom extends Room<{ state: ArenaState }> {
       winner: "",
     });
     (map.pickups ?? []).forEach((p, i) => {
-      this.state.pickups.set(String(i), new PickupState({ kind: p.kind, x: p.pos.x, y: p.pos.y, z: p.pos.z, active: true }));
+      // Weapon pickups only where the mode doesn't control loadouts itself.
+      if (p.kind === "weapon" && !mode.def.weaponPickups) return;
+      const pickup = new PickupState({ kind: p.kind, weapon: p.weapon ?? "", x: p.pos.x, y: p.pos.y, z: p.pos.z, active: true });
+      this.state.pickups.set(String(i), pickup);
     });
     // Accumulator-based, so the long-run rate is exactly TICK_RATE_HZ (plain setInterval(33.3) drifts to ~29.4 Hz,
     // which makes client inputs pile up and forces catch-up steps that look like hitches to other players).
@@ -753,7 +758,7 @@ export class ArenaRoom extends Room<{ state: ArenaState }> {
     }
   }
 
-  /** Health packs: heal whoever touches one (if hurt), then respawn it later. */
+  /** Pickups: whoever touches one and can use it takes it; it comes back later. */
   private tickPickups() {
     const tick = this.state.tick;
     this.state.pickups.forEach((pickup, key) => {
@@ -762,16 +767,30 @@ export class ArenaRoom extends Room<{ state: ArenaState }> {
         return;
       }
       for (const [id, p] of this.state.players) {
-        if (!p.alive || p.health >= p.maxHealth) continue;
+        if (!p.alive) continue;
         const dy = p.y - pickup.y;
         if (Math.hypot(p.x - pickup.x, p.z - pickup.z) > PICKUP_RADIUS || dy < -0.5 || dy > PICKUP_HEIGHT) continue;
-        p.health = Math.min(p.maxHealth, p.health + HEALTH_PACK_HEAL);
+        if (!this.applyPickup(p, pickup)) continue;
         pickup.active = false;
-        this.pickupRespawn.set(key, tick + Math.round(PICKUP_RESPAWN_MS / TICK_MS));
+        const respawnMs = pickup.kind === "weapon" ? WEAPON_PICKUP_RESPAWN_MS : PICKUP_RESPAWN_MS;
+        this.pickupRespawn.set(key, tick + Math.round(respawnMs / TICK_MS));
         this.broadcastEvent("pickup", { player: id, kind: pickup.kind, pos: { x: pickup.x, y: pickup.y, z: pickup.z } });
         break;
       }
     });
+  }
+
+  /** Gives `p` what the pickup holds; false if they can't use it (full health, weapon already full). */
+  private applyPickup(p: PlayerState, pickup: PickupState): boolean {
+    if (pickup.kind === "health") {
+      if (p.health >= p.maxHealth) return false;
+      p.health = Math.min(p.maxHealth, p.health + HEALTH_PACK_HEAL);
+      return true;
+    }
+    const arms = giveWeapon(readArms(p), pickup.weapon, this.modsOf(p));
+    if (!arms) return false;
+    writeArms(p, arms);
+    return true;
   }
 
   /** Afterburn: set `target` burning (refreshing any burn already on them). */

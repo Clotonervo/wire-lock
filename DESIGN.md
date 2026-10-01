@@ -196,6 +196,7 @@ interface MapDef {
 - **Scaffold** (the default) has height: north and south platforms (top y=4) joined by a bridge you can walk under, east and west ledges (y=2) with crate steps, pillars and crates. The lobby has a map select.
 - **Jump pads** are part of `stepPlayer`, so they're predicted. Touching one while not already rising (`PAD_REARM_VY`) sets your velocity to its `launch`. Scaffold's four pads each land you on a platform (tested).
 - **Health packs** are server-side: `HEALTH_PACK_HEAL` (50) to a hurt player within `PICKUP_RADIUS`, back after `PICKUP_RESPAWN_MS` (15 s). They are synced as `state.pickups` and reset each round.
+- **Weapon pickups** (`kind: "weapon"`, `weapon: <id>`) are only in play in modes with `weaponPickups` (Deathmatch). Touching one either adds the weapon (full magazine, switched to) or refills it if you already have it (`giveWeapon` in `shared/src/arms.ts`). If neither applies, the pickup stays put. They come back after `WEAPON_PICKUP_RESPAWN_MS` (20 s). Scaffold has a rocket launcher on the middle of the bridge and a shotgun on each side ledge; Test Arena has the rocket launcher on the centre platform and two shotguns on the floor.
 - Collision is swept AABB-vs-AABB, resolved axis by axis. The client builds meshes from the same data.
 - Keep maps small (arena-sized) and blocky.
 
@@ -233,9 +234,13 @@ interface WeaponDef {
   // Server-only hooks for silly behaviour. Receive a narrow, safe API.
   onHit?: (ctx: HitContext) => void;
   onFire?: (ctx: FireContext) => void;
+  slotKey?: number;                                        // number key that selects it (1 pistol, 2 shotgun, 3 rocket, 4 wrench)
   view: { model: string; color?: string; sound?: string };  // client cosmetics
 }
 ```
+
+- **Number keys are per weapon, not per slot**, so they don't move as you pick weapons up. Loadouts stay sorted by `slotKey`, and the HUD shows each weapon's key.
+- **Models** (`client/src/render/weaponModels.ts`) are flat-shaded, multi-part, low-poly: a pistol with slide, raked grip and sights (gold slide for the Chamber Pistol); a double-barrel shotgun with pump and stock; a rocket tube with flared muzzle, exhaust bell, hazard band and grips; and a rubber-gripped open-jaw wrench. The same builder is used for the first-person view (a pose per model), the weapon other players hold (shown 1.3× size, swapped from their synced `weapon`), and weapon pickups.
 
 `HitContext` exposes a small API such as `damage(target, amount)`, `teleport(player, pos)`, `swapPositions(a, b)`, `applyImpulse(player, vec)`, `spawnProjectile(...)`, `setPlayerScale(player, s)` and `broadcastEffect(name, data)`. Hooks must never touch Colyseus or sockets directly.
 
@@ -264,7 +269,7 @@ interface GameMode {
 }
 ```
 
-**v1 mode:** Free-for-all Deathmatch (first to 20 kills or 5 minutes).
+**v1 mode:** Free-for-all Deathmatch (first to 20 kills or 5 minutes). You spawn with only the Pistol; the Shotgun and Rocket Launcher are weapon pickups on the map (§6.2), and you lose them when you die.
 
 **Implemented (M4):** the room hands modes a read-only `ModeRoom` (players, phase, timer) plus a small `ModeApi` (`setLoadout`, `addAmmo`, `setKills`, `setLives`, `eliminate`), so mode code never touches Colyseus state. Rules live in `server/src/sim/modes/`, and the data both sides need (names, blurbs, the Gun Game ladder) lives in `shared/src/modes/`. Mode changes to weapons and ammo reach the owner's prediction through the normal reconcile, because arms are synced state.
 - **Gun Game:** Rocket Launcher ×2 → Shotgun ×2 → Pistol ×2 → Wrench. A wrench kill wins, and getting wrenched costs the victim a kill.
@@ -489,7 +494,7 @@ Each milestone should end with the game in a runnable state and the acceptance c
 
 ### M6+ — Silly stuff (open-ended)
 - Work through the silly weapons and modes backlog.
-- ~~Health pickups, jump pads, JSON map loading, a second map with height.~~ Done (§6.2). Weapon spawns still open.
+- ~~Health pickups, jump pads, JSON map loading, a second map with height.~~ Done (§6.2). Weapon pickups done too.
 - ~~Lag compensation for hitscan.~~ Done (§5.5).
 - ~~Settings menu (sensitivity, volume, FOV), round pause, spectator camera.~~ Done (§8, §9.2).
 - Simple map editor.

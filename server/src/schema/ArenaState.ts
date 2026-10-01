@@ -84,6 +84,8 @@ export type ProjectileState = SchemaType<typeof ProjectileState>;
 export const PickupState = schema(
   {
     kind: t.string(),
+    /** Weapon id for weapon pickups; "" for health. */
+    weapon: t.string(),
     x: t.float64(),
     y: t.float64(),
     z: t.float64(),

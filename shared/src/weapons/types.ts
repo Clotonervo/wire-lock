@@ -61,6 +61,11 @@ export interface WeaponDef {
    */
   onHit?: (ctx: HitContext) => void;
   onFire?: (ctx: FireContext) => void;
+  /**
+   * Number key that selects this weapon, whatever slot it's in, so keys don't
+   * move around as you pick weapons up. Loadouts are kept sorted by it.
+   */
+  slotKey?: number;
   /** Client cosmetics. */
   view: { model: string; color?: string; sound?: string };
 }

@@ -1,35 +1,45 @@
 import * as THREE from "three";
-import type { Vec3 } from "@wire-lock/shared";
+import type { Vec3, WeaponDef } from "@wire-lock/shared";
+import { buildWeaponModel, disposeWeaponModel, type WeaponModel } from "./weaponModels";
 
-const GUN_SIZE = { x: 0.07, y: 0.09, z: 0.34 };
-const GUN_OFFSET = { x: 0.22, y: -0.2, z: -0.42 };
-const DEFAULT_COLOR = "#2a2a2a";
+/** Where each model sits in front of the camera (right hand, below the crosshair). */
+const POSES: Record<string, { x: number; y: number; z: number }> = {
+  pistol: { x: 0.2, y: -0.19, z: -0.36 },
+  shotgun: { x: 0.19, y: -0.21, z: -0.3 },
+  rocket: { x: 0.25, y: -0.27, z: -0.36 },
+  wrench: { x: 0.24, y: -0.22, z: -0.4 },
+};
+const DEFAULT_POSE = { x: 0.22, y: -0.2, z: -0.42 };
 /** How far the gun kicks back when fired, and how fast it recovers. */
 const RECOIL_KICK = 0.06;
 const RECOIL_RECOVERY_MS = 60;
 
-/** The local player's first-person gun, attached to the camera. */
+/** The local player's first-person weapon, attached to the camera. */
 export class ViewModel {
-  private readonly gun: THREE.Mesh;
-  private readonly muzzle = new THREE.Object3D();
-  private readonly material: THREE.MeshLambertMaterial;
+  private readonly holder = new THREE.Group();
+  private model: WeaponModel | null = null;
+  private modelKey = "";
+  private pose = DEFAULT_POSE;
   private recoil = 0;
 
   constructor(camera: THREE.Camera) {
-    this.material = new THREE.MeshLambertMaterial({ color: DEFAULT_COLOR });
-    this.gun = new THREE.Mesh(new THREE.BoxGeometry(GUN_SIZE.x, GUN_SIZE.y, GUN_SIZE.z), this.material);
-    this.gun.position.set(GUN_OFFSET.x, GUN_OFFSET.y, GUN_OFFSET.z);
-    this.muzzle.position.z = -GUN_SIZE.z / 2;
-    this.gun.add(this.muzzle);
-    camera.add(this.gun);
+    camera.add(this.holder);
   }
 
-  setWeapon(color: string | undefined): void {
-    this.material.color.set(color ?? DEFAULT_COLOR);
+  /** Shows `weapon`'s model (rebuilt only when it changes). */
+  setWeapon(weapon: WeaponDef | undefined): void {
+    const key = weapon ? `${weapon.view.model}:${weapon.view.color ?? ""}` : "";
+    if (key === this.modelKey) return;
+    this.modelKey = key;
+    if (this.model) disposeWeaponModel(this.model);
+    this.model = buildWeaponModel(weapon?.view.model, weapon?.view.color);
+    this.holder.add(this.model.root);
+    this.pose = POSES[weapon?.view.model ?? ""] ?? DEFAULT_POSE;
+    this.holder.position.set(this.pose.x, this.pose.y, this.pose.z);
   }
 
   set visible(v: boolean) {
-    this.gun.visible = v;
+    this.holder.visible = v;
   }
 
   kick(): void {
@@ -38,11 +48,11 @@ export class ViewModel {
 
   update(frameMs: number): void {
     this.recoil *= Math.exp(-frameMs / RECOIL_RECOVERY_MS);
-    this.gun.position.z = GUN_OFFSET.z + this.recoil;
+    this.holder.position.z = this.pose.z + this.recoil;
   }
 
   muzzlePosition(): Vec3 {
-    const p = this.muzzle.getWorldPosition(new THREE.Vector3());
+    const p = (this.model?.muzzle ?? this.holder).getWorldPosition(new THREE.Vector3());
     return { x: p.x, y: p.y, z: p.z };
   }
 }

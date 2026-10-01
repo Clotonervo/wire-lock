@@ -13,5 +13,6 @@ export const chamberPistol: WeaponDef = {
   magazine: 1,
   spreadRad: 0.002,
   range: 100,
+  slotKey: 1,
   view: { model: "pistol", color: "#b8860b", sound: "pistol" },
 };

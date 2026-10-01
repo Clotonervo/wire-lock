@@ -17,5 +17,6 @@ export const rocketLauncher: WeaponDef = {
     splashDamage: 70,
   },
   knockback: 14,
+  slotKey: 3,
   view: { model: "rocket", color: "#556b2f", sound: "rocket" },
 };

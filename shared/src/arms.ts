@@ -66,6 +66,43 @@ export function createArms(slots: readonly string[], mods: PlayerMods = DEFAULT_
   };
 }
 
+/** Where a weapon sorts in a loadout: by its number key, keyless weapons last. */
+function slotOrder(id: string): number {
+  return getWeapon(id)?.slotKey ?? Number.MAX_SAFE_INTEGER;
+}
+
+/**
+ * A weapon pickup. A new weapon goes into the loadout in number-key order with
+ * a full magazine and is switched to; one you already have gets its magazine
+ * refilled. Returns null if it would change nothing (so the pickup stays put).
+ */
+export function giveWeapon(prev: ArmsState, id: string, mods: PlayerMods = DEFAULT_MODS): ArmsState | null {
+  const weapon = getWeapon(id);
+  if (!weapon) return null;
+  const mag = magazineSize(weapon, mods) ?? INFINITE_AMMO;
+  const owned = prev.slots.indexOf(id);
+  if (owned >= 0) {
+    if (mag === INFINITE_AMMO || (prev.ammo[owned] ?? 0) >= mag) return null;
+    const ammo = [...prev.ammo];
+    ammo[owned] = mag;
+    // A refill finishes a reload in progress on that weapon.
+    return { ...prev, ammo, reloadMs: owned === prev.current ? 0 : prev.reloadMs };
+  }
+  let at = prev.slots.findIndex((s) => slotOrder(s) > slotOrder(id));
+  if (at < 0) at = prev.slots.length;
+  const slots = [...prev.slots];
+  const ammo = [...prev.ammo];
+  slots.splice(at, 0, id);
+  ammo.splice(at, 0, mag);
+  return { slots, ammo, current: at, cooldownMs: Math.max(prev.cooldownMs, WEAPON_SWITCH_MS), reloadMs: 0 };
+}
+
+/** The slot a number key selects: the weapon with that `slotKey`, if you have it. */
+export function slotForKey(arms: ArmsState, key: number): number | undefined {
+  const i = arms.slots.findIndex((id) => getWeapon(id)?.slotKey === key);
+  return i < 0 ? undefined : i;
+}
+
 export function currentWeapon(arms: ArmsState): WeaponDef | undefined {
   const id = arms.slots[arms.current];
   return id === undefined ? undefined : getWeapon(id);

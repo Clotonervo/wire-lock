@@ -12,7 +12,7 @@ export interface HudView {
   weaponName: string;
   ammo: string;
   /** The loadout, in slot order, for the weapon bar. */
-  slots: { name: string; active: boolean }[];
+  slots: { key: number; name: string; active: boolean }[];
   /** Your Rewires' names, in pick order (stacks repeated). */
   rewires: string[];
   /** You're on fire (Afterburn). */
@@ -71,7 +71,7 @@ export class Hud {
     if (slotsKey !== this.slotsKey) {
       this.slotsKey = slotsKey;
       this.slots.replaceChildren(
-        ...(v.alive ? v.slots : []).map((s, i) => span(s.active ? "slot active" : "slot", `${i + 1} ${s.name}`)),
+        ...(v.alive ? v.slots : []).map((s) => span(s.active ? "slot active" : "slot", `${s.key} ${s.name}`)),
       );
     }
     setText(this.round, v.roundText);

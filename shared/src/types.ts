@@ -71,11 +71,13 @@ export interface JumpPad {
   launch: Vec3;
 }
 
-export type PickupKind = "health";
+export type PickupKind = "health" | "weapon";
 
 export interface PickupDef {
   pos: Vec3;
   kind: PickupKind;
+  /** For weapon pickups: the weapon id it gives. */
+  weapon?: string;
 }
 
 export interface MapDef {

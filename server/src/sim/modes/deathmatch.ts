@@ -24,7 +24,8 @@ export function createDeathmatch(overrides: Partial<ModeDef> = {}): GameMode {
   const modeDef: ModeDef = { ...def, ...overrides };
   return {
     def: modeDef,
-    loadout: () => ["pistol", "shotgun", "rocket"],
+    // Everything else is picked up on the map (weapon pickups).
+    loadout: () => ["pistol"],
     pickSpawn: (room, playerId) => farthestSpawn(room, playerId),
     checkWin(room) {
       const top = Math.max(0, ...room.players.map((p) => p.kills));

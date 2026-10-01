@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { COLLISION_SKIN, MAPS, TICK_DT, boxesOverlap, parseMapDef, playerBox, scaffold, stepPlayer } from "../src";
+import { COLLISION_SKIN, MAPS, getWeapon, TICK_DT, boxesOverlap, parseMapDef, playerBox, scaffold, stepPlayer } from "../src";
 import type { MoveInput, PlayerMoveState } from "../src";
 
 const idle: MoveInput = { move: { x: 0, z: 0 }, jump: false, yaw: 0 };
@@ -61,5 +61,14 @@ describe("Scaffold jump pads", () => {
     expect(launched).toBe(true);
     expect(st.onGround).toBe(true);
     expect(st.pos.y).toBeCloseTo(4, 1); // the platform top
+  });
+});
+
+describe.each(Object.values(MAPS))("map $name weapon pickups", (map) => {
+  it("only give weapons that exist and have a number key", () => {
+    for (const p of map.pickups ?? []) {
+      if (p.kind !== "weapon") continue;
+      expect(getWeapon(p.weapon ?? "")?.slotKey).toBeDefined();
+    }
   });
 });

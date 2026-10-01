@@ -12,5 +12,6 @@ export const shotgun: WeaponDef = {
   spreadRad: 0.08,
   range: 40,
   knockback: 1.2,
+  slotKey: 2,
   view: { model: "shotgun", color: "#6b4a2b", sound: "shotgun" },
 };

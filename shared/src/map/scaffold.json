@@ -425,6 +425,33 @@
         "z": 20
       },
       "kind": "health"
+    },
+    {
+      "pos": {
+        "x": 0,
+        "y": 4,
+        "z": 0
+      },
+      "kind": "weapon",
+      "weapon": "rocket"
+    },
+    {
+      "pos": {
+        "x": 18,
+        "y": 2,
+        "z": -4
+      },
+      "kind": "weapon",
+      "weapon": "shotgun"
+    },
+    {
+      "pos": {
+        "x": -18,
+        "y": 2,
+        "z": 4
+      },
+      "kind": "weapon",
+      "weapon": "shotgun"
     }
   ],
   "spawns": [

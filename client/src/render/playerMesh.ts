@@ -1,20 +1,23 @@
 import * as THREE from "three";
-import { PLAYER_EYE_HEIGHT, PLAYER_HEIGHT, PLAYER_WIDTH } from "@wire-lock/shared";
+import { PLAYER_EYE_HEIGHT, PLAYER_HEIGHT, PLAYER_WIDTH, getWeapon } from "@wire-lock/shared";
 import type { Vec3 } from "@wire-lock/shared";
+import { buildWeaponModel, disposeWeaponModel, type WeaponModel } from "./weaponModels";
 
 const RADIUS = PLAYER_WIDTH / 2;
-const GUN_SIZE = { x: 0.1, y: 0.1, z: 0.5 };
-const GUN_OFFSET = { x: 0.25, y: -0.2, z: -0.3 };
-const GUN_COLOR = 0x222222;
+const GUN_OFFSET = { x: 0.25, y: -0.25, z: -0.2 };
+/** Weapons are drawn a bit bigger than true scale on other players so you can tell what they hold. */
+const GUN_SCALE = 1.3;
 const XRAY_OPACITY = 0.55;
 const XRAY_RENDER_ORDER = 999;
 const BURN_GLOW = 0xff5a00;
 
-/** A remote player: capsule body tinted by player colour, with a gun box that follows the look direction. */
+/** A remote player: capsule body tinted by player colour, holding their current weapon's model, aimed where they look. */
 export class PlayerMesh {
   readonly root = new THREE.Group();
   private readonly head = new THREE.Group();
-  private readonly muzzle = new THREE.Object3D();
+  private readonly gunHolder = new THREE.Group();
+  private gun: WeaponModel | null = null;
+  private weaponId: string | null = null;
   private readonly bodyMaterial: THREE.MeshLambertMaterial;
   private xray = false;
   private burning = false;
@@ -27,15 +30,22 @@ export class PlayerMesh {
 
     this.head.position.y = PLAYER_EYE_HEIGHT;
     this.head.rotation.order = "YXZ";
-    const gun = new THREE.Mesh(
-      new THREE.BoxGeometry(GUN_SIZE.x, GUN_SIZE.y, GUN_SIZE.z),
-      new THREE.MeshLambertMaterial({ color: GUN_COLOR }),
-    );
-    gun.position.set(GUN_OFFSET.x, GUN_OFFSET.y, GUN_OFFSET.z);
-    this.muzzle.position.z = -GUN_SIZE.z / 2;
-    gun.add(this.muzzle);
-    this.head.add(gun);
+    this.gunHolder.position.set(GUN_OFFSET.x, GUN_OFFSET.y, GUN_OFFSET.z);
+    this.gunHolder.scale.setScalar(GUN_SCALE);
+    this.head.add(this.gunHolder);
     this.root.add(this.head);
+    this.setWeapon("pistol");
+  }
+
+  /** Swaps the held model when their weapon changes. */
+  setWeapon(id: string): void {
+    if (id === this.weaponId) return;
+    this.weaponId = id;
+    if (this.gun) disposeWeaponModel(this.gun);
+    const w = getWeapon(id);
+    this.gun = buildWeaponModel(w?.view.model, w?.view.color);
+    this.gunHolder.add(this.gun.root);
+    if (this.xray) this.applyXRay(this.gun.root, true);
   }
 
   update(pos: Vec3, yaw: number, pitch: number, visible: boolean): void {
@@ -49,7 +59,11 @@ export class PlayerMesh {
   setXRay(on: boolean): void {
     if (on === this.xray) return;
     this.xray = on;
-    this.root.traverse((o) => {
+    this.applyXRay(this.root, on);
+  }
+
+  private applyXRay(root: THREE.Object3D, on: boolean): void {
+    root.traverse((o) => {
       if (!(o instanceof THREE.Mesh)) return;
       const m = o.material as THREE.Material;
       m.depthTest = !on;
@@ -71,7 +85,7 @@ export class PlayerMesh {
   }
 
   muzzlePosition(): Vec3 {
-    const p = this.muzzle.getWorldPosition(new THREE.Vector3());
+    const p = (this.gun?.muzzle ?? this.gunHolder).getWorldPosition(new THREE.Vector3());
     return { x: p.x, y: p.y, z: p.z };
   }
 

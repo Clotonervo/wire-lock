@@ -10,5 +10,6 @@ export const pistol: WeaponDef = {
   reloadMs: 1100,
   spreadRad: 0.004,
   range: 100,
+  slotKey: 1,
   view: { model: "pistol", color: "#2a2a2a", sound: "pistol" },
 };

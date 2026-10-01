@@ -16,18 +16,21 @@ export interface ModeDef {
   lives?: number;
   /** Whether players earn Rewires (DESIGN.md §8b). */
   rewires?: boolean;
+  /** Whether the map's weapon pickups are in play (otherwise the mode controls loadouts). */
+  weaponPickups?: boolean;
   respawnDelayMs: number;
 }
 
 export const deathmatch: ModeDef = {
   id: "deathmatch",
   name: "Deathmatch",
-  blurb: "Every weapon, first to 20 kills.",
+  blurb: "Spawn with a pistol, grab bigger guns on the map. First to 20 kills.",
   minPlayers: 2,
   roundTimeSec: 300,
   scoreLimit: 20,
   respawnDelayMs: 3000,
   rewires: true,
+  weaponPickups: true,
 };
 
 /** Gun Game's weapons in order, and the kills needed on each before moving up. */

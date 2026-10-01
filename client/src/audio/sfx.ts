@@ -12,7 +12,8 @@ export type SoundName =
   | "switch"
   | "melee"
   | "heal"
-  | "pad";
+  | "pad"
+  | "weaponPickup";
 
 const MUTE_KEY = "wire-lock.muted";
 const DEFAULT_VOLUME = 0.5;
@@ -118,6 +119,12 @@ export class Sfx {
         break;
       case "heal":
         this.tone(out, t, "sine", 520, 1040, 0.3, 0.25);
+        break;
+      case "weaponPickup":
+        // A rack: two quick metallic clacks.
+        this.noiseBurst(out, t, { type: "bandpass", freq: 2200, q: 3 }, 0.35, 0.04);
+        this.noiseBurst(out, t + 0.09, { type: "bandpass", freq: 1500, q: 3 }, 0.4, 0.05);
+        this.tone(out, t + 0.09, "square", 140, 90, 0.12, 0.06);
         break;
       case "pad":
         this.tone(out, t, "triangle", 180, 720, 0.4, 0.3);

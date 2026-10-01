@@ -9,5 +9,6 @@ export const wrench: WeaponDef = {
   damage: 100,
   range: 2.2,
   knockback: 3,
+  slotKey: 4,
   view: { model: "wrench", color: "#9aa3ad", sound: "melee" },
 };

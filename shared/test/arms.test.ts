@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { INFINITE_AMMO, TICK_DT, TICK_MS, WEAPON_SWITCH_MS, createArms, pistol, shotgun, stepArms } from "../src";
+import { DEFAULT_MODS, INFINITE_AMMO, TICK_DT, TICK_MS, WEAPON_SWITCH_MS, createArms, giveWeapon, pistol, shotgun, slotForKey, stepArms } from "../src";
 import type { ArmsState, InputCmd } from "../src";
 
 function cmd(over: Partial<InputCmd> = {}): InputCmd {
@@ -92,5 +92,38 @@ describe("stepArms", () => {
     const copy = JSON.parse(JSON.stringify(a)) as ArmsState;
     stepArms(a, cmd({ fire: true }), true);
     expect(a).toEqual(copy);
+  });
+});
+
+describe("giveWeapon", () => {
+  it("adds a new weapon in number-key order, full, and switches to it", () => {
+    const start = createArms(["pistol", "rocket"]);
+    const got = giveWeapon(start, "shotgun");
+    expect(got?.slots).toEqual(["pistol", "shotgun", "rocket"]);
+    expect(got?.current).toBe(1);
+    expect(got?.ammo[1]).toBe(shotgun.magazine);
+    expect(got?.cooldownMs).toBeGreaterThan(0); // the usual switch delay
+  });
+
+  it("refills a weapon you already have, and does nothing if it's full", () => {
+    const start = createArms(["pistol", "shotgun"]);
+    expect(giveWeapon(start, "shotgun")).toBeNull();
+    const low = { ...start, ammo: [12, 1], current: 1, reloadMs: 300 };
+    const got = giveWeapon(low, "shotgun");
+    expect(got?.ammo).toEqual([12, shotgun.magazine]);
+    expect(got?.reloadMs).toBe(0);
+    expect(got?.current).toBe(1);
+  });
+
+  it("uses Rewire-modified magazine sizes", () => {
+    const mods = { ...DEFAULT_MODS, magazineMul: 2 };
+    expect(giveWeapon(createArms(["pistol"], mods), "shotgun", mods)?.ammo[1]).toBe((shotgun.magazine ?? 0) * 2);
+  });
+
+  it("maps number keys to weapons, not slot positions", () => {
+    const arms = createArms(["pistol", "rocket"]);
+    expect(slotForKey(arms, 1)).toBe(0);
+    expect(slotForKey(arms, 3)).toBe(1);
+    expect(slotForKey(arms, 2)).toBeUndefined();
   });
 });

@@ -84,6 +84,8 @@ export const PAD_REARM_VY = 1;
 /** Health packs: how much they heal, how soon they come back, and how close you must be. */
 export const HEALTH_PACK_HEAL = 50;
 export const PICKUP_RESPAWN_MS = 15_000;
+/** Weapon pickups (Deathmatch) come back more slowly than health. */
+export const WEAPON_PICKUP_RESPAWN_MS = 20_000;
 export const PICKUP_RADIUS = 1;
 export const PICKUP_HEIGHT = 1.5;
 
