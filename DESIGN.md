@@ -347,10 +347,39 @@ Effects only the server needs (damage multipliers, heal on kill, explode on deat
 | Glass Cannon | wild | Deal double damage, half max health | mods + server hook |
 | Dead Man's Switch | wild | Explode when you die, damaging those nearby | server hook |
 
-**Later ideas:**
-- **Needs engine work:** Tiny and Giant (player size), Moon Boots (personal low gravity).
-- **Projectile and bullet behaviour:** Bouncy Bullets, Homing Rockets, Ricochet.
-- **Wild:** Shield Bubble, "every 10th shot is a rocket".
+**Second set (v2), 20 more:**
+
+| Rewire | Rarity | Effect | Kind |
+|---|---|---|---|
+| Hollow Points | common | +20% damage (stacks ×2) | mods |
+| Magnetic Rounds | rare | Hitscan/melee shots passing within ~2.5° of an enemy's body count as hits. "Aim assist" as bullet magnetism, never camera snapping. | mods (server) |
+| Headhunter | rare | Hits in the top 20% of the body deal +60% (the game's first headshots) | mods (server) |
+| Point Blank | common | +40% damage within 6 m | mods (server) |
+| Long Shot | common | +30% damage beyond 20 m | mods (server) |
+| Executioner | rare | +50% damage to enemies below 35% health | mods (server) |
+| Afterburn | rare | Your hits set enemies burning for 15 damage over 3 s | mods (server) |
+| Ricochet | rare | Bullets bounce once off walls, at 75% damage after the bounce | mods (server + cosmetic tracer) |
+| Big Boom | common | +40% explosion radius, including your own rocket jumps | mods (shared) |
+| Cluster Bomb | wild | Rockets also burst into 3 bomblets around the impact | mods (shared, so self-knockback predicts) |
+| Thick Skin | common | Take 15% less damage (stacks ×2) | mods (server) |
+| Regenerator | common | Heal 5 HP/s after 3 s without taking damage | mods (server) |
+| Second Wind | rare | Once per life, a killing hit leaves you at 1 HP | mods (server) |
+| Feather Fall | common | Fall 40% slower | mods (shared) |
+| Air Dash | rare | Right-click to dash the way you're moving (3 s cooldown) | mods (shared: cooldown in movement state) |
+| Adrenaline | rare | Each kill gives +30% speed for 3 s | hook + shared boost timer |
+| Scavenger | common | Kills refill your current magazine | hook |
+| Radar | rare | See enemies through walls within 15 m | mods (client rendering) |
+| Copycat | rare | Each kill has a 20% chance to copy one of the victim's Rewires (they keep it; stack limits and the cap still apply) | hook |
+| Gambler | wild | When picked, immediately gain 2 more random Rewires | hook (on pick) |
+
+The rarity weights stay common 60 / rare 30 / wild 10. With 30 Rewires the pool is about half common.
+
+**Implementation notes for v2:**
+- **Data, not hooks.** Conditional damage modifiers (headshot, range, execute, damage taken) are plain `PlayerMods` numbers the server's damage step reads, so Rewires stay data.
+- **Hooks only for events:** on kill (Vampire, Scavenger, Adrenaline, Copycat), on death (Dead Man's Switch), and on pick (Gambler).
+- **Movement Rewires stay exact.** Anything changing movement (Feather Fall, Air Dash, Adrenaline's speed, Big Boom's and Cluster Bomb's effect on your own rocket jumps) goes through the shared simulation. Its extra state (dash cooldown, boost timer, whether alt-fire was held) is synced, like Spring Heels' fields.
+
+**Later ideas:** Tiny and Giant (player size), Moon Boots (personal low gravity), Homing Rockets, Shield Bubble, "every 10th shot is a rocket".
 
 ### 8b.4 Networking and UI
 
