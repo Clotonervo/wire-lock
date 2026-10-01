@@ -36,3 +36,24 @@ describe("resolveHitscan", () => {
     expect(r.target).toBe("p");
   });
 });
+
+describe("resolveHitscan with Magnetic Rounds", () => {
+  const nearMiss = { x: 0.06, y: 0, z: -1 }; // ~3.4° off to the side of a target 6 units ahead
+  const len = Math.hypot(nearMiss.x, nearMiss.z);
+  const dir = { x: nearMiss.x / len, y: 0, z: nearMiss.z / len };
+  const target = [{ id: "p", pos: { x: -0.35, y: 0, z: -6 } }];
+
+  it("misses without assist", () => {
+    expect(resolveHitscan(eye, dir, 100, [], target).target).toBeNull();
+  });
+
+  it("bends a near miss at head height into the closest player within the angle", () => {
+    const r = resolveHitscan(eye, dir, 100, [], [...target, { id: "far", pos: { x: 3, y: 0, z: -6 } }], 0.12);
+    expect(r.target).toBe("p");
+  });
+
+  it("won't bend through walls", () => {
+    const between: Box = { min: { x: -2, y: 0, z: -4 }, max: { x: -0.1, y: 4, z: -3.5 } };
+    expect(resolveHitscan(eye, dir, 100, [between], target, 0.12).target).toBeNull();
+  });
+});

@@ -1,7 +1,10 @@
 import { Room, ServerError, type Client } from "@colyseus/core";
 import {
+  AFTERBURN_MS,
+  AFTERBURN_PULSES,
   AWAY_TIMEOUT_MS,
   DEFAULT_MAP_ID,
+  HEADSHOT_FROM,
   DEFAULT_MODE_ID,
   MAX_ROOMS,
   MODES,
@@ -14,6 +17,10 @@ import {
   MAX_MESSAGES_PER_SECOND,
   MAX_PLAYERS_PER_ROOM,
   PATCH_RATE_MS,
+  PLAYER_HEIGHT,
+  REGEN_DELAY_MS,
+  REWIRES,
+  RICOCHET_DAMAGE_MUL,
   REWIRE_DEATHS_PER_PICK,
   REWIRE_STREAK_KILLS,
   ROUND_END_DELAY_MS,
@@ -28,9 +35,13 @@ import {
   getMap,
   getRewire,
   getWeapon,
+  magazineSize,
   maxHealth,
+  rayBoxesHit,
+  reflect,
   rollOffer,
   shotPattern,
+  stacksOf,
   seededRng,
   stepInput,
 } from "@wire-lock/shared";
@@ -54,6 +65,7 @@ import type {
 import { config } from "../config";
 import { log } from "../log";
 import { ArenaState, PlayerState, ProjectileState, type RoundPhase } from "../schema/ArenaState";
+import { scaleDamage } from "../sim/damage";
 import { resolveHitscan } from "../sim/hitscan";
 import { PositionHistory, rewindTime } from "../sim/lagCompensation";
 import { createMode, type GameMode, type ModeApi, type ModeRoom } from "../sim/modes";
@@ -76,6 +88,14 @@ interface PlayerRuntime {
   streak: number;
   /** Picks banked by streaks, handed out at the next death. */
   banked: number;
+  /** Tick this player last took damage (Regenerator waits after it). */
+  lastDamagedTick: number;
+  /** Regenerator's fractional HP, carried between ticks. */
+  regenAcc: number;
+  /** Second Wind saves used this life. */
+  secondWindsUsed: number;
+  /** Afterburn currently on this player. */
+  burn: { attacker: string; pulsesLeft: number; perPulse: number; nextTick: number } | null;
 }
 
 export class ArenaRoom extends Room<{ state: ArenaState }> {
@@ -138,6 +158,10 @@ export class ArenaRoom extends Room<{ state: ArenaState }> {
       onGround: false,
       airJumpsUsed: 0,
       jumpHeld: false,
+      dashCooldownMs: 0,
+      altHeld: false,
+      boostMs: 0,
+      burning: false,
       yaw: 0,
       pitch: 0,
       lastProcessedSeq: -1,
@@ -157,7 +181,17 @@ export class ArenaRoom extends Room<{ state: ArenaState }> {
       eliminated: false,
     });
     this.state.players.set(id, player);
-    this.runtime.set(id, { queue: [], lastQueuedSeq: -1, lastInputTick: this.state.tick, streak: 0, banked: 0 });
+    this.runtime.set(id, {
+      queue: [],
+      lastQueuedSeq: -1,
+      lastInputTick: this.state.tick,
+      streak: 0,
+      banked: 0,
+      lastDamagedTick: 0,
+      regenAcc: 0,
+      secondWindsUsed: 0,
+      burn: null,
+    });
     if (this.rewiresActive()) {
       // Joining mid-round with Rewires: take the starting pick before the first spawn.
       player.respawnTick = this.state.tick;
@@ -219,6 +253,7 @@ export class ArenaRoom extends Room<{ state: ArenaState }> {
       for (const cmd of rt.queue.splice(0, count)) this.applyInput(id, player, rt, cmd);
 
       if (player.alive && player.y < KILL_Y) this.killPlayer(id, null, WORLD_KILL);
+      this.tickRewireEffects(id, player, rt);
     });
 
     this.mode.onTick?.(this.modeRoom(), TICK_DT);
@@ -265,18 +300,34 @@ export class ArenaRoom extends Room<{ state: ArenaState }> {
     weapon.onFire?.({ ...api, shooter: id, weaponId: weapon.id, origin, dir: aim });
 
     const ends: Vec3[] = [];
+    const bounces: { from: Vec3; to: Vec3 }[] = [];
     if (weapon.kind !== "projectile") {
       const targets = this.hitscanTargets(id, viewTime);
+      const posOf = (pid: string) => targets.find((t) => t.id === pid)?.pos;
       const rng = seededRng(this.shotSeed++);
       const pattern = shotPattern(weapon, mods);
+      const assist = mods?.aimAssistRad ?? 0;
+      const range = weapon.range ?? 0;
       for (let i = 0; i < pattern.count; i++) {
         const dir = applySpread(aim, pattern.spread, rng);
-        const shot = resolveHitscan(origin, dir, weapon.range ?? 0, this.map.boxes, targets);
+        const shot = resolveHitscan(origin, dir, range, this.map.boxes, targets, assist);
         if (weapon.kind === "hitscan") ends.push(shot.end); // melee has no tracer
-        if (shot.target) this.applyHit(id, shot.target, weapon, shot.end, dir, api);
+        if (shot.target) {
+          this.applyHit(id, shot.target, weapon, shot.end, dir, api, 1, posOf(shot.target));
+          continue;
+        }
+        // Ricochet: a bullet that hit a wall bounces once and carries on with what's left of its range.
+        if (weapon.kind !== "hitscan" || !mods?.ricochets) continue;
+        const wall = rayBoxesHit(origin, dir, this.map.boxes, range);
+        if (!wall.normal) continue;
+        const from = { x: shot.end.x + wall.normal.x * 0.01, y: shot.end.y + wall.normal.y * 0.01, z: shot.end.z + wall.normal.z * 0.01 };
+        const out = reflect(dir, wall.normal);
+        const second = resolveHitscan(from, out, range - wall.dist, this.map.boxes, targets, assist);
+        bounces.push({ from, to: second.end });
+        if (second.target) this.applyHit(id, second.target, weapon, second.end, out, api, RICOCHET_DAMAGE_MUL, posOf(second.target));
       }
     }
-    this.broadcastEvent("fire", { shooter: id, weapon: weapon.id, ends }, this.clients.get(id));
+    this.broadcastEvent("fire", { shooter: id, weapon: weapon.id, ends, ...(bounces.length ? { bounces } : {}) }, this.clients.get(id));
   }
 
   /**
@@ -293,7 +344,8 @@ export class ArenaRoom extends Room<{ state: ArenaState }> {
     const hits: { id: string; damage: number; impulse: Vec3 | null }[] = [];
     this.state.players.forEach((p, pid) => {
       if (!p.alive) return;
-      const blast = blastEffect(e.point, { x: p.x, y: p.y, z: p.z }, e.weapon, this.map.boxes);
+      const radiusMul = ownerPlayer ? this.modsOf(ownerPlayer).splashRadiusMul : 1;
+      const blast = blastEffect(e.point, { x: p.x, y: p.y, z: p.z }, e.weapon, this.map.boxes, radiusMul);
       const direct = pid === e.direct ? e.weapon.damage : 0;
       if (!blast && !direct) return;
       const splash = (blast?.damage ?? 0) * (pid === owner ? selfScale : 1);
@@ -307,8 +359,19 @@ export class ArenaRoom extends Room<{ state: ArenaState }> {
     }
   }
 
-  private applyHit(shooter: string, target: string, weapon: WeaponDef, point: Vec3, dir: Vec3, api: WeaponApi) {
-    if (weapon.damage > 0) api.damage(target, weapon.damage);
+  private applyHit(
+    shooter: string,
+    target: string,
+    weapon: WeaponDef,
+    point: Vec3,
+    dir: Vec3,
+    api: WeaponApi,
+    damageScale = 1,
+    targetPos?: Vec3,
+  ) {
+    // Headshot: the hit landed in the top of the body (at the position the shooter saw).
+    const headshot = !!targetPos && point.y >= targetPos.y + PLAYER_HEIGHT * HEADSHOT_FROM;
+    if (weapon.damage > 0) this.damage(target, weapon.damage * damageScale, shooter, weapon.id, { headshot });
     if (weapon.knockback) {
       const k = weapon.knockback;
       api.applyImpulse(target, { x: dir.x * k, y: dir.y * k, z: dir.z * k });
@@ -346,12 +409,30 @@ export class ArenaRoom extends Room<{ state: ArenaState }> {
     };
   }
 
-  private damage(targetId: string, amount: number, attackerId: string, weaponId: string) {
+  /**
+   * All damage goes through here. Rewire modifiers (DESIGN.md §8b): the attacker's
+   * damage, headshot, range and execute bonuses and Afterburn; the target's
+   * Thick Skin and Second Wind.
+   */
+  private damage(targetId: string, amount: number, attackerId: string, weaponId: string, info: { headshot?: boolean; burn?: boolean } = {}) {
     const target = this.state.players.get(targetId);
     if (!target?.alive || amount <= 0) return;
-    const attackerPlayer = this.state.players.get(attackerId);
-    if (attackerPlayer) amount *= this.modsOf(attackerPlayer).damageMul;
-    target.health = Math.max(0, target.health - Math.round(amount));
+    const trt = this.runtime.get(targetId);
+    const attackerPlayer = attackerId !== targetId ? this.state.players.get(attackerId) : undefined;
+    const am = attackerPlayer ? this.modsOf(attackerPlayer) : null;
+    const tm = this.modsOf(target);
+    const dist = attackerPlayer ? Math.hypot(attackerPlayer.x - target.x, attackerPlayer.y - target.y, attackerPlayer.z - target.z) : 0;
+    amount = scaleDamage(amount, am, tm, { dist, headshot: !!info.headshot, targetHealth: target.health, targetMaxHealth: target.maxHealth });
+    if (am && am.afterburnDamage > 0 && !info.burn) this.ignite(targetId, attackerId, am.afterburnDamage);
+
+    let health = target.health - Math.round(amount);
+    if (trt) trt.lastDamagedTick = this.state.tick;
+    if (health <= 0 && trt && trt.secondWindsUsed < tm.secondWinds) {
+      trt.secondWindsUsed++;
+      health = 1;
+      this.broadcastEvent("secondWind", { player: targetId });
+    }
+    target.health = Math.max(0, health);
     const killed = target.health === 0;
     const attacker = this.clients.get(attackerId);
     if (attacker && attackerId !== targetId) this.sendEvent(attacker, "hit", { target: targetId, damage: amount, killed });
@@ -364,6 +445,7 @@ export class ArenaRoom extends Room<{ state: ArenaState }> {
     victim.alive = false;
     victim.health = 0;
     victim.respawnTick = this.state.tick + Math.ceil(this.mode.def.respawnDelayMs / TICK_MS);
+    this.extinguish(victimId);
 
     const killer = killerId ?? victimId;
     const k = this.state.players.get(killer);
@@ -396,6 +478,12 @@ export class ArenaRoom extends Room<{ state: ArenaState }> {
     player.yaw = spawn.yaw;
     player.pitch = 0;
     const mods = this.modsOf(player);
+    const rt = this.runtime.get(id);
+    if (rt) {
+      rt.secondWindsUsed = 0;
+      rt.regenAcc = 0;
+    }
+    this.extinguish(id);
     player.maxHealth = maxHealth(mods);
     player.health = player.maxHealth;
     player.alive = true;
@@ -516,6 +604,7 @@ export class ArenaRoom extends Room<{ state: ArenaState }> {
       if (p.away) return;
       if (draft) {
         // The round-start draft: everyone picks a Rewire, then spawns (DESIGN.md §8b.1).
+        for (const r of config.testRewires) if (getRewire(r)) p.rewires.push(r);
         p.alive = false;
         p.health = 0;
         p.respawnTick = s.tick;
@@ -592,6 +681,7 @@ export class ArenaRoom extends Room<{ state: ArenaState }> {
     p.rewires.push(choice);
     p.offer.clear();
     p.pendingPicks--;
+    getRewire(choice)?.onPick?.({ ...this.rewireApi, player: id });
     this.ensureOffer(p);
     log("rewire.pick", { sessionId: id, rewire: choice, owned: p.rewires.length });
   }
@@ -616,12 +706,86 @@ export class ArenaRoom extends Room<{ state: ArenaState }> {
     }
   }
 
+  /** Afterburn: set `target` burning (refreshing any burn already on them). */
+  private ignite(target: string, attacker: string, total: number) {
+    const rt = this.runtime.get(target);
+    const p = this.state.players.get(target);
+    if (!rt || !p?.alive) return;
+    const interval = Math.round(AFTERBURN_MS / AFTERBURN_PULSES / TICK_MS);
+    rt.burn = { attacker, pulsesLeft: AFTERBURN_PULSES, perPulse: total / AFTERBURN_PULSES, nextTick: this.state.tick + interval };
+    p.burning = true;
+  }
+
+  private extinguish(id: string) {
+    const rt = this.runtime.get(id);
+    if (rt) rt.burn = null;
+    const p = this.state.players.get(id);
+    if (p) p.burning = false;
+  }
+
+  /** Effects that run every tick: Afterburn pulses and Regenerator. */
+  private tickRewireEffects(id: string, p: PlayerState, rt: PlayerRuntime) {
+    const tick = this.state.tick;
+    if (rt.burn && tick >= rt.burn.nextTick) {
+      const burn = rt.burn;
+      burn.pulsesLeft--;
+      burn.nextTick += Math.round(AFTERBURN_MS / AFTERBURN_PULSES / TICK_MS);
+      if (burn.pulsesLeft <= 0) this.extinguish(id);
+      this.damage(id, burn.perPulse, burn.attacker, "afterburn", { burn: true });
+    }
+    if (!p.alive) return;
+    const regen = this.modsOf(p).regenPerSec;
+    if (regen > 0 && p.health < p.maxHealth && (tick - rt.lastDamagedTick) * TICK_MS >= REGEN_DELAY_MS) {
+      rt.regenAcc += regen * TICK_DT;
+      const whole = Math.floor(rt.regenAcc);
+      if (whole > 0) {
+        rt.regenAcc -= whole;
+        p.health = Math.min(p.maxHealth, p.health + whole);
+      }
+    }
+  }
+
   /** The narrow API Rewire hooks get. */
   private readonly rewireApi: RewireApi = {
     heal: (id, amount) => {
       const p = this.state.players.get(id);
       if (p?.alive) p.health = Math.min(p.maxHealth, p.health + amount);
     },
+    refillMagazine: (id) => {
+      const p = this.state.players.get(id);
+      const weapon = p && getWeapon(p.weapons[p.slot] ?? "");
+      const mag = p && weapon && magazineSize(weapon, this.modsOf(p));
+      if (!p?.alive || mag === undefined || !mag) return;
+      p.ammo[p.slot] = mag;
+      p.reloadMs = 0;
+    },
+    boost: (id, ms) => {
+      const p = this.state.players.get(id);
+      if (p?.alive) p.boostMs = ms;
+    },
+    copyRewire: (to, from) => {
+      const p = this.state.players.get(to);
+      const src = this.state.players.get(from);
+      if (!p || !src || this.rewireRoom(p) === 0) return;
+      const owned = p.rewires.toArray();
+      const candidates = src.rewires.toArray().filter((r) => stacksOf(owned, r) < (getRewire(r)?.maxStacks ?? 1));
+      const pick = candidates[Math.floor(Math.random() * candidates.length)];
+      if (!pick) return;
+      p.rewires.push(pick);
+      this.broadcastEvent("copied", { player: to, from, rewire: pick });
+    },
+    grantRandom: (id, count) => {
+      const p = this.state.players.get(id);
+      if (!p) return;
+      for (let i = 0; i < count && this.rewireRoom(p) > 0; i++) {
+        const owned = p.rewires.toArray();
+        // Anything but another Gambler (no chains), uniformly: "could be anything".
+        const pool = Object.values(REWIRES).filter((r) => !r.onPick && stacksOf(owned, r.id) < (r.maxStacks ?? 1));
+        const pick = pool[Math.floor(Math.random() * pool.length)];
+        if (pick) p.rewires.push(pick.id);
+      }
+    },
+    random: () => Math.random(),
     explode: (owner, at, weaponId) => {
       const weapon = getWeapon(weaponId);
       if (weapon) this.explode(owner, { shotSeq: -1, sub: 0, weapon, point: { ...at }, direct: null });
@@ -723,6 +887,9 @@ function readMove(p: PlayerState): PlayerMoveState {
     onGround: p.onGround,
     airJumpsUsed: p.airJumpsUsed,
     jumpHeld: p.jumpHeld,
+    dashCooldownMs: p.dashCooldownMs,
+    altHeld: p.altHeld,
+    boostMs: p.boostMs,
   };
 }
 
@@ -736,6 +903,9 @@ function writeMove(p: PlayerState, m: PlayerMoveState) {
   p.onGround = m.onGround;
   p.airJumpsUsed = m.airJumpsUsed ?? 0;
   p.jumpHeld = m.jumpHeld ?? false;
+  p.dashCooldownMs = m.dashCooldownMs ?? 0;
+  p.altHeld = m.altHeld ?? false;
+  p.boostMs = m.boostMs ?? 0;
 }
 
 function readArms(p: PlayerState): ArmsState {

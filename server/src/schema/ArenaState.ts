@@ -19,6 +19,10 @@ export const PlayerState = schema(
     /** Movement state the owner re-simulates from (Spring Heels). */
     airJumpsUsed: t.uint8(),
     jumpHeld: t.boolean(),
+    dashCooldownMs: t.float64(),
+    altHeld: t.boolean(),
+    /** Adrenaline speed boost left, ms (part of movement, so the owner predicts it). */
+    boostMs: t.float64(),
     yaw: t.number(),
     pitch: t.number(),
     lastProcessedSeq: t.number(),
@@ -49,6 +53,8 @@ export const PlayerState = schema(
     rewires: t.array("string"),
     offer: t.array("string"),
     pendingPicks: t.uint8(),
+    /** On fire (Afterburn), for everyone's effects. */
+    burning: t.boolean(),
   },
   "PlayerState",
 );
