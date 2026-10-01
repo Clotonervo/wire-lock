@@ -1,4 +1,5 @@
 import { WEAPON_SWITCH_MS } from "./constants";
+import { DEFAULT_MODS, type PlayerMods } from "./rewires";
 import type { InputCmd } from "./types";
 import { getWeapon } from "./weapons";
 import type { WeaponDef } from "./weapons";
@@ -35,11 +36,19 @@ export interface ArmsStepResult {
   switched: boolean;
 }
 
-export function createArms(slots: readonly string[]): ArmsState {
+/** A weapon's magazine size with Rewires applied; undefined for weapons without one. */
+export function magazineSize(weapon: WeaponDef, mods: PlayerMods = DEFAULT_MODS): number | undefined {
+  return weapon.magazine === undefined ? undefined : Math.max(1, Math.round(weapon.magazine * mods.magazineMul));
+}
+
+export function createArms(slots: readonly string[], mods: PlayerMods = DEFAULT_MODS): ArmsState {
   return {
     slots: [...slots],
     current: 0,
-    ammo: slots.map((id) => getWeapon(id)?.magazine ?? INFINITE_AMMO),
+    ammo: slots.map((id) => {
+      const w = getWeapon(id);
+      return (w && magazineSize(w, mods)) ?? INFINITE_AMMO;
+    }),
     cooldownMs: 0,
     reloadMs: 0,
   };
@@ -54,7 +63,7 @@ export function currentWeapon(arms: ArmsState): WeaponDef | undefined {
  * One input's worth of weapon handling, in a fixed order: switch, timers,
  * reload request, fire. `canFire` is false between rounds.
  */
-export function stepArms(prev: ArmsState, cmd: InputCmd, canFire: boolean): ArmsStepResult {
+export function stepArms(prev: ArmsState, cmd: InputCmd, canFire: boolean, mods: PlayerMods = DEFAULT_MODS): ArmsStepResult {
   const arms: ArmsState = { ...prev, slots: prev.slots, ammo: [...prev.ammo] };
   const dtMs = cmd.dt * 1000;
   const result: ArmsStepResult = { arms, fired: null, reloadStarted: false, reloadFinished: false, switched: false };
@@ -73,16 +82,18 @@ export function stepArms(prev: ArmsState, cmd: InputCmd, canFire: boolean): Arms
     arms.reloadMs -= dtMs;
     if (arms.reloadMs <= TIMER_EPSILON) {
       arms.reloadMs = 0;
-      if (weapon?.magazine !== undefined) arms.ammo[arms.current] = weapon.magazine;
+      const mag = weapon && magazineSize(weapon, mods);
+      if (mag !== undefined) arms.ammo[arms.current] = mag;
       result.reloadFinished = true;
     }
   }
   if (!weapon) return result;
 
   const ammo = arms.ammo[arms.current] ?? 0;
-  const canReload = weapon.magazine !== undefined && ammo !== INFINITE_AMMO && ammo < weapon.magazine;
+  const mag = magazineSize(weapon, mods);
+  const canReload = mag !== undefined && ammo !== INFINITE_AMMO && ammo < mag;
   const startReload = () => {
-    arms.reloadMs = weapon.reloadMs ?? 0;
+    arms.reloadMs = (weapon.reloadMs ?? 0) * mods.reloadMul;
     result.reloadStarted = arms.reloadMs > 0;
   };
 
@@ -93,7 +104,7 @@ export function stepArms(prev: ArmsState, cmd: InputCmd, canFire: boolean): Arms
       if (canReload) startReload();
     } else {
       result.fired = weapon;
-      arms.cooldownMs = weapon.fireIntervalMs;
+      arms.cooldownMs = weapon.fireIntervalMs * mods.fireIntervalMul;
       if (ammo !== INFINITE_AMMO) {
         arms.ammo[arms.current] = ammo - 1;
         if (ammo - 1 === 0) startReload();

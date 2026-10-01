@@ -14,6 +14,8 @@ export interface ModeDef {
   scoreLimit?: number;
   /** Lives per round; undefined = unlimited respawns. */
   lives?: number;
+  /** Whether players earn Rewires (DESIGN.md §8b). */
+  rewires?: boolean;
   respawnDelayMs: number;
 }
 
@@ -25,6 +27,7 @@ export const deathmatch: ModeDef = {
   roundTimeSec: 300,
   scoreLimit: 20,
   respawnDelayMs: 3000,
+  rewires: true,
 };
 
 /** Gun Game's weapons in order, and the kills needed on each before moving up. */

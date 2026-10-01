@@ -1,4 +1,6 @@
 import { stepArms, type ArmsState } from "./arms";
+import { SPLIT_ROCKET_ANGLE } from "./constants";
+import { DEFAULT_MODS, type PlayerMods } from "./rewires";
 import { stepPlayer } from "./movement";
 import { blastEffect, stepProjectile, type Projectile, type ProjectileTarget } from "./projectile";
 import { aimDirection, eyePosition } from "./raycast";
@@ -10,10 +12,13 @@ export interface PlayerSim {
   move: PlayerMoveState;
   arms: ArmsState;
   alive: boolean;
+  /** Folded from the player's Rewires (both sides derive it from the synced list). */
+  mods?: PlayerMods;
 }
 
 export interface Explosion {
   shotSeq: number;
+  sub: number;
   weapon: WeaponDef;
   point: Vec3;
   /** Player hit directly, if any. */
@@ -28,7 +33,7 @@ export interface InputStepResult {
   /** Eye position and aim the shot was fired from (valid when `fired`). */
   origin: Vec3;
   aim: Vec3;
-  spawned: Projectile | null;
+  spawned: Projectile[];
   explosions: Explosion[];
   reloadStarted: boolean;
   reloadFinished: boolean;
@@ -58,6 +63,7 @@ export function stepInput(
   map: MapDef,
   opts: InputStepOptions,
 ): InputStepResult {
+  const mods = sim.mods ?? DEFAULT_MODS;
   let move = sim.move;
   let arms = sim.arms;
   let fired: WeaponDef | null = null;
@@ -66,19 +72,25 @@ export function stepInput(
   let switched = false;
 
   if (sim.alive) {
-    move = stepPlayer(move, cmd, map, cmd.dt);
-    const a = stepArms(arms, cmd, opts.canFire);
+    move = stepPlayer(move, cmd, map, cmd.dt, mods);
+    const a = stepArms(arms, cmd, opts.canFire, mods);
     ({ arms, fired, reloadStarted, reloadFinished, switched } = a);
   }
 
   const origin = eyePosition(move.pos);
   const aim = aimDirection(cmd.yaw, cmd.pitch);
   const live: Projectile[] = [...projectiles];
-  let spawned: Projectile | null = null;
+  const spawned: Projectile[] = [];
   if (fired?.kind === "projectile" && fired.projectile) {
     const s = fired.projectile.speed;
-    spawned = { shotSeq: cmd.seq, weapon: fired.id, pos: origin, vel: { x: aim.x * s, y: aim.y * s, z: aim.z * s }, ageMs: 0 };
-    live.push(spawned);
+    // Split Shot fans extra rockets out sideways, at fixed angles so prediction matches exactly.
+    const count = 1 + mods.extraPellets;
+    for (let sub = 0; sub < count; sub++) {
+      const d = aimDirection(cmd.yaw + (sub - (count - 1) / 2) * SPLIT_ROCKET_ANGLE, cmd.pitch);
+      const p: Projectile = { shotSeq: cmd.seq, sub, weapon: fired.id, pos: origin, vel: { x: d.x * s, y: d.y * s, z: d.z * s }, ageMs: 0 };
+      spawned.push(p);
+      live.push(p);
+    }
   }
 
   const next: Projectile[] = [];
@@ -87,19 +99,22 @@ export function stepInput(
     const weapon = getWeapon(p.weapon);
     if (!weapon) continue;
     const step = stepProjectile(p, weapon, map.boxes, opts.targets, cmd.dt);
-    if (step.explodedAt) explosions.push({ shotSeq: p.shotSeq, weapon, point: step.explodedAt, direct: step.direct });
+    if (step.explodedAt) explosions.push({ shotSeq: p.shotSeq, sub: p.sub ?? 0, weapon, point: step.explodedAt, direct: step.direct });
     else next.push(step.projectile);
   }
 
   if (sim.alive) {
     for (const e of explosions) {
       const blast = blastEffect(e.point, move.pos, e.weapon, map.boxes);
-      if (blast) move = applyImpulse(move, blast.impulse);
+      if (blast) {
+        const k = mods.selfKnockbackMul;
+        move = applyImpulse(move, { x: blast.impulse.x * k, y: blast.impulse.y * k, z: blast.impulse.z * k });
+      }
     }
   }
 
   return {
-    sim: { move, arms, alive: sim.alive },
+    sim: { move, arms, alive: sim.alive, mods },
     projectiles: next,
     fired,
     origin,
@@ -114,7 +129,7 @@ export function stepInput(
 
 export function applyImpulse(m: PlayerMoveState, v: Vec3): PlayerMoveState {
   return {
-    pos: m.pos,
+    ...m,
     vel: { x: m.vel.x + v.x, y: m.vel.y + v.y, z: m.vel.z + v.z },
     onGround: v.y > 0 ? false : m.onGround,
   };

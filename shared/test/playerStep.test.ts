@@ -28,7 +28,7 @@ describe("stepInput", () => {
   it("fires a rocket that flies and later explodes on a wall", () => {
     const cmds = [cmd(0, { fire: true }), ...Array.from({ length: 60 }, (_, i) => cmd(i + 1))];
     const r = run(standing(), cmds);
-    expect(r.log[0]?.spawned?.shotSeq).toBe(0);
+    expect(r.log[0]?.spawned[0]?.shotSeq).toBe(0);
     const exploded = r.log.findIndex((l) => l.explosions.length > 0);
     expect(exploded).toBeGreaterThan(0);
     expect(r.projectiles).toHaveLength(0);

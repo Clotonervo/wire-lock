@@ -6,8 +6,10 @@ import type { WeaponDef } from "./weapons";
 
 /** A projectile, owned by the player whose input fired it. Pure data. */
 export interface Projectile {
-  /** The owner's input seq that fired it; unique per owner. */
+  /** The owner's input seq that fired it. */
   shotSeq: number;
+  /** Which of the shot's projectiles this is (Split Shot fires several); with shotSeq, unique per owner. */
+  sub?: number;
   weapon: string;
   pos: Vec3;
   vel: Vec3;

@@ -96,6 +96,21 @@ export const AWAY_TIMEOUT_MS = 8000;
 export const ROUND_END_DELAY_MS = 8000;
 export const MAX_NAME_LENGTH = 16;
 
+// --- Rewires (DESIGN.md §8b.5) ---
+
+/** A Rewire pick every this many deaths (plus one at the start of each round). */
+export const REWIRE_DEATHS_PER_PICK = 2;
+/** Every this many kills without dying banks an extra pick for your next death. */
+export const REWIRE_STREAK_KILLS = 3;
+/** Most Rewires one player can have in a round, including the starting pick. */
+export const MAX_REWIRES_PER_ROUND = 6;
+export const REWIRE_OFFER_SIZE = 3;
+export const REWIRE_RARITY_WEIGHTS = { common: 60, rare: 30, wild: 10 } as const;
+/** Split Shot's extra bullets spread at least this much (radians), so they don't all land on one spot. */
+export const SPLIT_SHOT_SPREAD = 0.035;
+/** Horizontal angle between Split Shot's extra rockets (radians). */
+export const SPLIT_ROCKET_ANGLE = 0.08;
+
 // --- Collision ---
 
 /** Gap kept between a player and the surfaces they touch, to avoid float-precision snagging. */

@@ -9,6 +9,7 @@ import {
   MAX_SPEED,
   STOP_SPEED,
 } from "./constants";
+import { DEFAULT_MODS, type PlayerMods } from "./rewires";
 import type { InputCmd, MapDef, PlayerMoveState, Vec3 } from "./types";
 
 export type MoveInput = Pick<InputCmd, "move" | "jump" | "yaw">;
@@ -46,17 +47,30 @@ function accelerate(vel: Vec3, dir: { x: number; z: number }, wishSpeed: number,
  * Advances one player by one tick. Pure and deterministic: the client runs it
  * for prediction and the server runs it authoritatively (DESIGN.md §6.3).
  */
-export function stepPlayer(state: PlayerMoveState, input: MoveInput, map: MapDef, dt: number): PlayerMoveState {
+export function stepPlayer(
+  state: PlayerMoveState,
+  input: MoveInput,
+  map: MapDef,
+  dt: number,
+  mods: PlayerMods = DEFAULT_MODS,
+): PlayerMoveState {
   const vel = { ...state.vel };
   const dir = wishDirection(input);
   const hasWish = dir.x !== 0 || dir.z !== 0;
+  const maxSpeed = MAX_SPEED * mods.moveSpeedMul;
+  let airJumpsUsed = state.airJumpsUsed ?? 0;
 
   if (state.onGround) {
     applyFriction(vel, dt);
-    if (hasWish) accelerate(vel, dir, MAX_SPEED, GROUND_ACCEL, dt);
+    if (hasWish) accelerate(vel, dir, maxSpeed, GROUND_ACCEL, dt);
     if (input.jump) vel.y = JUMP_SPEED;
-  } else if (hasWish) {
-    accelerate(vel, dir, MAX_SPEED, AIR_ACCEL, dt);
+  } else {
+    if (hasWish) accelerate(vel, dir, maxSpeed, AIR_ACCEL * mods.airAccelMul, dt);
+    // Mid-air jumps need a fresh press, so holding jump off a ledge doesn't spend them.
+    if (input.jump && !state.jumpHeld && airJumpsUsed < mods.airJumps) {
+      vel.y = JUMP_SPEED;
+      airJumpsUsed++;
+    }
   }
 
   vel.y = Math.max(vel.y - GRAVITY * dt, -MAX_FALL_SPEED);
@@ -67,6 +81,7 @@ export function stepPlayer(state: PlayerMoveState, input: MoveInput, map: MapDef
   if (hit.z) vel.z = 0;
   const onGround = hit.y && vel.y < 0;
   if (hit.y) vel.y = 0;
+  if (onGround) airJumpsUsed = 0;
 
-  return { pos, vel, onGround };
+  return { pos, vel, onGround, airJumpsUsed, jumpHeld: input.jump };
 }

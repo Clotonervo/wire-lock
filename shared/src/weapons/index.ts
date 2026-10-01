@@ -1,4 +1,5 @@
 import { chamberPistol } from "./chamberPistol";
+import { deadMansSwitchBlast } from "./deadMansSwitch";
 import { pistol } from "./pistol";
 import { rocketLauncher } from "./rocketLauncher";
 import { shotgun } from "./shotgun";
@@ -15,6 +16,7 @@ export const WEAPONS: Readonly<Record<string, WeaponDef>> = {
   [rocketLauncher.id]: rocketLauncher,
   [wrench.id]: wrench,
   [chamberPistol.id]: chamberPistol,
+  [deadMansSwitchBlast.id]: deadMansSwitchBlast,
 };
 
 export function getWeapon(id: string): WeaponDef | undefined {

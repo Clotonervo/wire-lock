@@ -37,6 +37,10 @@ export interface PlayerMoveState {
   pos: Vec3;
   vel: Vec3;
   onGround: boolean;
+  /** Mid-air jumps used since last touching the ground (Spring Heels). */
+  airJumpsUsed?: number;
+  /** Whether jump was held last tick, so mid-air jumps need a fresh press. */
+  jumpHeld?: boolean;
 }
 
 export interface Box {
