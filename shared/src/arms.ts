@@ -1,4 +1,4 @@
-import { WEAPON_SWITCH_MS } from "./constants";
+import { MAX_HEALTH, SPLIT_SHOT_SPREAD, WEAPON_SWITCH_MS } from "./constants";
 import { DEFAULT_MODS, type PlayerMods } from "./rewires";
 import type { InputCmd } from "./types";
 import { getWeapon } from "./weapons";
@@ -39,6 +39,18 @@ export interface ArmsStepResult {
 /** A weapon's magazine size with Rewires applied; undefined for weapons without one. */
 export function magazineSize(weapon: WeaponDef, mods: PlayerMods = DEFAULT_MODS): number | undefined {
   return weapon.magazine === undefined ? undefined : Math.max(1, Math.round(weapon.magazine * mods.magazineMul));
+}
+
+/** How many rays a hitscan/melee shot fires and how widely they spread, with Rewires applied. */
+export function shotPattern(weapon: WeaponDef, mods: PlayerMods = DEFAULT_MODS): { count: number; spread: number } {
+  const count = (weapon.pellets ?? 1) + mods.extraPellets;
+  const spread = mods.extraPellets > 0 ? Math.max(weapon.spreadRad ?? 0, SPLIT_SHOT_SPREAD) : (weapon.spreadRad ?? 0);
+  return { count, spread };
+}
+
+/** Max health with Rewires applied. */
+export function maxHealth(mods: PlayerMods = DEFAULT_MODS): number {
+  return Math.max(1, Math.round((MAX_HEALTH + mods.maxHealthAdd) * mods.maxHealthMul));
 }
 
 export function createArms(slots: readonly string[], mods: PlayerMods = DEFAULT_MODS): ArmsState {

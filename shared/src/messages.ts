@@ -14,7 +14,9 @@ export interface ServerMessages {
    * A projectile exploded. `tick` places it on the server timeline so remote
    * clients can show it when their (delayed) view of the rocket gets there.
    */
-  explode: { owner: string; shotSeq: number; weapon: string; pos: Vec3; tick: number };
+  explode: { owner: string; shotSeq: number; sub: number; weapon: string; pos: Vec3; tick: number };
+  /** `player` reached a kill streak that banked a Rewire pick (DESIGN.md §8b.1). */
+  streak: { player: string; kills: number };
   roundStart: Record<string, never>;
   /** `winner` is a session id, or empty for a draw. */
   roundEnd: { winner: string };

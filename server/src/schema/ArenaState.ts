@@ -16,10 +16,15 @@ export const PlayerState = schema(
     vy: t.float64(),
     vz: t.float64(),
     onGround: t.boolean(),
+    /** Movement state the owner re-simulates from (Spring Heels). */
+    airJumpsUsed: t.uint8(),
+    jumpHeld: t.boolean(),
     yaw: t.number(),
     pitch: t.number(),
     lastProcessedSeq: t.number(),
     health: t.uint8(),
+    /** Max health with Rewires applied, for the HUD. */
+    maxHealth: t.uint8(),
     alive: t.boolean(),
     /** Out of the world after AWAY_TIMEOUT_MS without input; back on their next input. */
     away: t.boolean(),
@@ -39,17 +44,24 @@ export const PlayerState = schema(
     lives: t.int8(),
     /** Out of the round (spectating) until the next one. */
     eliminated: t.boolean(),
+    // Rewires (DESIGN.md §8b): owned ids in pick order (repeats = stacks), the current
+    // 1-of-3 offer, and picks still owed. A player with picks owed doesn't spawn.
+    rewires: t.array("string"),
+    offer: t.array("string"),
+    pendingPicks: t.uint8(),
   },
   "PlayerState",
 );
 export type PlayerState = SchemaType<typeof PlayerState>;
 
-/** A live projectile. Keyed `${owner}:${shotSeq}` in ArenaState.projectiles. */
+/** A live projectile. Keyed `${owner}:${shotSeq}:${sub}` in ArenaState.projectiles. */
 export const ProjectileState = schema(
   {
     owner: t.string(),
     weapon: t.string(),
     shotSeq: t.number(),
+    /** Which of the shot's projectiles (Split Shot fires several). */
+    sub: t.uint8(),
     x: t.float64(),
     y: t.float64(),
     z: t.float64(),
