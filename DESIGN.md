@@ -368,7 +368,7 @@ Effects only the server needs (damage multipliers, heal on kill, explode on deat
 | Air Dash | rare | Right-click to dash the way you're moving (3 s cooldown) | mods (shared: cooldown in movement state) |
 | Adrenaline | rare | Each kill gives +30% speed for 3 s | hook + shared boost timer |
 | Scavenger | common | Kills refill your current magazine | hook |
-| Radar | rare | See enemies through walls within 15 m | mods (client rendering) |
+| Radar | rare | See enemies through walls within 15 m. Anyone inside a Radar holder's range sees a faint pulsing cyan vignette, so they know they're being tracked. | mods (client rendering) |
 | Copycat | rare | Each kill has a 20% chance to copy one of the victim's Rewires (they keep it; stack limits and the cap still apply) | hook |
 | Gambler | wild | When picked, immediately gain 2 more random Rewires | hook (on pick) |
 

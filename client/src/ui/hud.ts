@@ -17,6 +17,8 @@ export interface HudView {
   rewires: string[];
   /** You're on fire (Afterburn). */
   burning: boolean;
+  /** Someone with Radar is close enough to see you through walls. */
+  tracked: boolean;
   /** Top-centre line: round timer or phase message. */
   roundText: string;
   roundSub: string;
@@ -41,6 +43,7 @@ export class Hud {
   private readonly center = el("div", "hud-center");
   private readonly centerSub = el("div", "hud-center-sub");
   private readonly damage = el("div", "hud-damage");
+  private readonly tracked = el("div", "hud-tracked");
   private readonly crosshair: HTMLElement | null;
   private hitmarkerTimer: number | undefined;
   private damageTimer: number | undefined;
@@ -51,7 +54,7 @@ export class Hud {
     top.append(this.round, this.roundSub);
     const middle = el("div", "hud-middle");
     middle.append(this.center, this.centerSub);
-    root.append(this.damage, top, this.feed, middle, this.rewires, this.lives, this.health, this.slots, this.weapon);
+    root.append(this.tracked, this.damage, top, this.feed, middle, this.rewires, this.lives, this.health, this.slots, this.weapon);
     this.crosshair = document.getElementById("crosshair");
   }
 
@@ -61,6 +64,7 @@ export class Hud {
     setText(this.lives, v.lives >= 0 ? "♥".repeat(v.lives) : "");
     setText(this.rewires, v.rewires.join(" · "));
     this.damage.classList.toggle("burning", v.alive && v.burning);
+    this.tracked.classList.toggle("on", v.alive && v.tracked);
     setText(this.weaponName, v.alive ? v.weaponName : "");
     setText(this.ammo, v.alive ? v.ammo : "");
     const slotsKey = v.alive ? JSON.stringify(v.slots) : "";

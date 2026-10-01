@@ -52,6 +52,12 @@
       .hud-damage { position: absolute; inset: 0; box-shadow: inset 0 0 120px 30px #ff000000; transition: box-shadow 0.3s; }
       .hud-damage.on { box-shadow: inset 0 0 120px 30px #ff0000aa; transition: none; }
       .hud-damage.burning { box-shadow: inset 0 0 140px 40px #ff6a0099; }
+      .hud-tracked { position: absolute; inset: 0; box-shadow: inset 0 0 160px 30px #3fd8ff00; transition: box-shadow 0.4s; }
+      .hud-tracked.on { box-shadow: inset 0 0 160px 30px #3fd8ff40; animation: tracked-pulse 1.6s ease-in-out infinite; }
+      @keyframes tracked-pulse {
+        0%, 100% { box-shadow: inset 0 0 160px 30px #3fd8ff30; }
+        50% { box-shadow: inset 0 0 170px 40px #3fd8ff60; }
+      }
       .scoreboard {
         position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); min-width: 320px; max-width: calc(100vw - 32px);
         padding: 14px 18px; background: #000c; border-radius: 6px; pointer-events: none;

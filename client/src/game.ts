@@ -8,6 +8,7 @@ import {
   TICK_MS,
   applySpread,
   currentWeapon,
+  foldMods,
   getRewire,
   GUN_GAME_LADDER,
   getMode,
@@ -614,6 +615,7 @@ export class Game {
       slots: (arms?.slots ?? []).map((id, i) => ({ name: getWeapon(id)?.name ?? id, active: i === arms?.current })),
       rewires: me ? rewireNames(me.rewires.toArray()) : [],
       burning: me?.burning ?? false,
+      tracked: alive && this.isTracked(),
       roundText,
       roundSub,
       centerText,
@@ -637,6 +639,21 @@ export class Game {
       });
     }
     this.ui.scoreboard.update(showBoard, s.phase === "ended" ? roundText : mode?.name ?? "Scores", rows);
+  }
+
+  /** Whether any living enemy with Radar is within its range of us, so it can see us through walls. */
+  private isTracked(): boolean {
+    const me = this.predictor?.state.pos;
+    if (!me) return false;
+    for (const [id, remote] of this.remotes) {
+      const p = this.room.state.players.get(id);
+      if (!p?.alive || p.away || !remote.mesh.visible) continue;
+      const range = foldMods(p.rewires.toArray()).radarRange;
+      if (range <= 0) continue;
+      const o = remote.mesh.root.position;
+      if (Math.hypot(o.x - me.x, o.y - me.y, o.z - me.z) <= range) return true;
+    }
+    return false;
   }
 
   /** The mode-specific line under the round timer. */
