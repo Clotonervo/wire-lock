@@ -13,6 +13,8 @@ export interface HudView {
   ammo: string;
   /** The loadout, in slot order, for the weapon bar. */
   slots: { name: string; active: boolean }[];
+  /** Your Rewires' names, in pick order (stacks repeated). */
+  rewires: string[];
   /** Top-centre line: round timer or phase message. */
   roundText: string;
   roundSub: string;
@@ -25,6 +27,7 @@ export interface HudView {
 export class Hud {
   private readonly health = el("div", "hud-health");
   private readonly lives = el("div", "hud-lives");
+  private readonly rewires = el("div", "hud-rewires");
   private readonly weapon = el("div", "hud-weapon");
   private readonly weaponName = el("div", "hud-weapon-name");
   private readonly ammo = el("div", "hud-ammo");
@@ -46,7 +49,7 @@ export class Hud {
     top.append(this.round, this.roundSub);
     const middle = el("div", "hud-middle");
     middle.append(this.center, this.centerSub);
-    root.append(this.damage, top, this.feed, middle, this.lives, this.health, this.slots, this.weapon);
+    root.append(this.damage, top, this.feed, middle, this.rewires, this.lives, this.health, this.slots, this.weapon);
     this.crosshair = document.getElementById("crosshair");
   }
 
@@ -54,6 +57,7 @@ export class Hud {
     setText(this.health, v.alive ? String(v.health) : "");
     this.health.classList.toggle("low", v.alive && v.health <= LOW_HEALTH);
     setText(this.lives, v.lives >= 0 ? "♥".repeat(v.lives) : "");
+    setText(this.rewires, v.rewires.join(" · "));
     setText(this.weaponName, v.alive ? v.weaponName : "");
     setText(this.ammo, v.alive ? v.ammo : "");
     const slotsKey = v.alive ? JSON.stringify(v.slots) : "";
@@ -74,6 +78,15 @@ export class Hud {
     const item = el("li", mine ? "mine" : "");
     if (killer === victim) item.append(span("name", victim), span("weapon", ` ${weapon === "world" ? "fell out of the world" : "died"}`));
     else item.append(span("name", killer), span("weapon", ` [${weapon}] `), span("name", victim));
+    this.feed.prepend(item);
+    while (this.feed.children.length > FEED_SIZE) this.feed.lastElementChild?.remove();
+    window.setTimeout(() => item.remove(), FEED_MS);
+  }
+
+  /** A one-line announcement in the kill feed (e.g. a streak). */
+  addNote(text: string, mine: boolean): void {
+    const item = el("li", mine ? "note mine" : "note");
+    item.textContent = text;
     this.feed.prepend(item);
     while (this.feed.children.length > FEED_SIZE) this.feed.lastElementChild?.remove();
     window.setTimeout(() => item.remove(), FEED_MS);

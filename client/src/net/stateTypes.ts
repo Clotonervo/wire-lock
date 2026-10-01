@@ -1,3 +1,4 @@
+import { foldMods } from "@wire-lock/shared";
 import type { PlayerMoveState, PlayerSim, Projectile } from "@wire-lock/shared";
 
 /** A synced array (Colyseus ArraySchema), as decoded on the client. */
@@ -21,10 +22,13 @@ export interface PlayerView {
   vy: number;
   vz: number;
   onGround: boolean;
+  airJumpsUsed: number;
+  jumpHeld: boolean;
   yaw: number;
   pitch: number;
   lastProcessedSeq: number;
   health: number;
+  maxHealth: number;
   alive: boolean;
   away: boolean;
   /** Server tick at which a dead player respawns; 0 when not waiting to respawn. */
@@ -41,12 +45,18 @@ export interface PlayerView {
   lives: number;
   /** Out of the round (spectating) until the next one. */
   eliminated: boolean;
+  /** Owned Rewire ids in pick order; repeats are stacks. */
+  rewires: SyncedArray<string>;
+  /** The current 1-of-3 offer, if a pick is owed. */
+  offer: SyncedArray<string>;
+  pendingPicks: number;
 }
 
 export interface ProjectileView {
   owner: string;
   weapon: string;
   shotSeq: number;
+  sub: number;
   x: number;
   y: number;
   z: number;
@@ -80,7 +90,13 @@ export interface ArenaStateView {
 }
 
 export function readMove(p: PlayerView): PlayerMoveState {
-  return { pos: { x: p.x, y: p.y, z: p.z }, vel: { x: p.vx, y: p.vy, z: p.vz }, onGround: p.onGround };
+  return {
+    pos: { x: p.x, y: p.y, z: p.z },
+    vel: { x: p.vx, y: p.vy, z: p.vz },
+    onGround: p.onGround,
+    airJumpsUsed: p.airJumpsUsed,
+    jumpHeld: p.jumpHeld,
+  };
 }
 
 export function readSim(p: PlayerView): PlayerSim {
@@ -88,11 +104,12 @@ export function readSim(p: PlayerView): PlayerSim {
     move: readMove(p),
     arms: { slots: p.weapons.toArray(), current: p.slot, ammo: p.ammo.toArray(), cooldownMs: p.cooldownMs, reloadMs: p.reloadMs },
     alive: p.alive && !p.away,
+    mods: foldMods(p.rewires.toArray()),
   };
 }
 
 export function readProjectile(p: ProjectileView): Projectile {
-  return { shotSeq: p.shotSeq, weapon: p.weapon, pos: { x: p.x, y: p.y, z: p.z }, vel: { x: p.vx, y: p.vy, z: p.vz }, ageMs: p.ageMs };
+  return { shotSeq: p.shotSeq, sub: p.sub, weapon: p.weapon, pos: { x: p.x, y: p.y, z: p.z }, vel: { x: p.vx, y: p.vy, z: p.vz }, ageMs: p.ageMs };
 }
 
 /** A player's live projectiles, in the order the server steps them. */
@@ -101,5 +118,5 @@ export function projectilesOf(state: ArenaStateView, owner: string): Projectile[
   state.projectiles.forEach((p) => {
     if (p.owner === owner) out.push(readProjectile(p));
   });
-  return out.sort((a, b) => a.shotSeq - b.shotSeq);
+  return out.sort((a, b) => a.shotSeq - b.shotSeq || (a.sub ?? 0) - (b.sub ?? 0));
 }

@@ -8,6 +8,7 @@ import {
   TICK_MS,
   applySpread,
   currentWeapon,
+  getRewire,
   GUN_GAME_LADDER,
   getMode,
   getWeapon,
@@ -20,8 +21,9 @@ import {
   pointAlong,
   rayBox,
   rayBoxes,
+  shotPattern,
 } from "@wire-lock/shared";
-import type { InputCmd, InputStepResult, MapDef, ServerMessages, Vec3, WeaponDef } from "@wire-lock/shared";
+import type { InputCmd, InputStepResult, MapDef, PlayerMods, Projectile, ServerMessages, Vec3, WeaponDef } from "@wire-lock/shared";
 import type { Sfx, SoundName } from "./audio/sfx";
 import type { InputController } from "./input/input";
 import type { ArenaRoom } from "./net/connection";
@@ -37,6 +39,7 @@ import type { SceneContext } from "./render/scene";
 import { ViewModel } from "./render/viewModel";
 import type { DebugOverlay, DebugStats } from "./ui/debugOverlay";
 import type { Hud } from "./ui/hud";
+import type { RewirePicker } from "./ui/rewirePicker";
 import type { Scoreboard, ScoreRow } from "./ui/scoreboard";
 
 /** Longest frame we simulate; after a stall (e.g. a background tab) we skip ahead instead of fast-forwarding. */
@@ -68,6 +71,12 @@ export interface GameUi {
   hud: Hud;
   scoreboard: Scoreboard;
   sfx: Sfx;
+  picker: RewirePicker;
+}
+
+/** Own projectiles are identified by shot and sub-index (Split Shot fires several per shot). */
+function rocketKey(p: { shotSeq: number; sub?: number }): string {
+  return `${p.shotSeq}:${p.sub ?? 0}`;
 }
 
 export class Game {
@@ -87,11 +96,11 @@ export class Game {
   private readonly effects: Effects;
   private readonly viewModel: ViewModel;
   /** Our own rockets, drawn from the prediction (keyed by shotSeq), with where each was at the start of the tick. */
-  private ownRockets = new Map<number, { mesh: ProjectileMesh; prev: Vec3 }>();
+  private ownRockets = new Map<string, { mesh: ProjectileMesh; prev: Vec3 }>();
   private remoteRockets = new Map<string, RemoteProjectile>();
   /** Explosions from others, held until our delayed view of the world reaches them. */
   private pendingExplosions: { at: Vec3; weapon: string; t: number }[] = [];
-  private shownOwnExplosions: number[] = [];
+  private shownOwnExplosions: string[] = [];
   private wasAlive = false;
   private lastHealth = 0;
   private lastKillerName = "";
@@ -122,6 +131,14 @@ export class Game {
     this.effects = new Effects(view.scene);
     this.viewModel = new ViewModel(view.camera);
     input.onScoreboard = (show) => (this.scoreboardHeld = show);
+    input.onNumberKey = (n) => {
+      if (ui.picker.visible) ui.picker.pickIndex(n - 1);
+      else if (input.locked) input.requestSlot(n - 1);
+    };
+    ui.picker.onPick = (id) => {
+      this.room.send("pickRewire", { id });
+      this.ui.sfx.play("switch");
+    };
     input.onWheel = (dir) => {
       const arms = this.predictor?.sim.arms;
       if (arms && arms.slots.length > 0) input.requestSlot((arms.current + dir + arms.slots.length) % arms.slots.length);
@@ -138,8 +155,12 @@ export class Game {
     });
     this.listen("kill", (m) => this.onKill(m));
     this.listen("explode", (m) => this.onExplode(m));
-    this.listen("roundStart", () => {});
+    this.listen("roundStart", () => (this.lastKillerName = ""));
     this.listen("roundEnd", () => {});
+    this.listen("streak", (m) => {
+      const mine = m.player === this.room.sessionId;
+      this.ui.hud.addNote(`${mine ? "You're" : `${this.nameOf(m.player)} is`} on a ${m.kills}-kill streak! +1 Rewire`, mine);
+    });
     const ping = () => this.room.ping((ms) => (this.stats.pingMs = ms));
     ping();
     setInterval(ping, PING_INTERVAL_MS);
@@ -299,18 +320,19 @@ export class Game {
   private onExplode(m: ServerMessages["explode"]): void {
     if (m.owner === this.room.sessionId) {
       // Usually we predicted it already; show the server's only if we didn't (e.g. it hit a player we didn't know about).
-      if (!this.shownOwnExplosions.includes(m.shotSeq)) this.showExplosion(m.pos, m.weapon, m.shotSeq);
+      const key = rocketKey(m);
+      if (!this.shownOwnExplosions.includes(key)) this.showExplosion(m.pos, m.weapon, key);
       return;
     }
     this.pendingExplosions.push({ at: m.pos, weapon: m.weapon, t: m.tick * TICK_MS });
   }
 
-  private showExplosion(at: Vec3, weaponId: string, ownShotSeq?: number): void {
+  private showExplosion(at: Vec3, weaponId: string, ownKey?: string): void {
     const weapon = getWeapon(weaponId);
     this.effects.explosion(at, weapon?.projectile?.splashRadius ?? 1, performance.now());
     this.ui.sfx.play("explosion", at);
-    if (ownShotSeq !== undefined) {
-      this.shownOwnExplosions.push(ownShotSeq);
+    if (ownKey !== undefined) {
+      this.shownOwnExplosions.push(ownKey);
       if (this.shownOwnExplosions.length > SHOWN_EXPLOSIONS_KEPT) this.shownOwnExplosions.shift();
     }
   }
@@ -352,7 +374,7 @@ export class Game {
     };
     this.prevPos = { ...this.predictor.state.pos };
     for (const p of this.predictor.projectiles) {
-      const r = this.ownRockets.get(p.shotSeq);
+      const r = this.ownRockets.get(rocketKey(p));
       if (r) r.prev = { ...p.pos };
     }
     const result = this.predictor.apply(cmd, this.canFire);
@@ -364,12 +386,12 @@ export class Game {
   private predictedEffects(r: InputStepResult, now: number): void {
     if (r.switched) this.ui.sfx.play("switch");
     if (r.reloadStarted) this.ui.sfx.play("reload");
-    if (r.fired) this.localShot(r.fired, r.origin, r.aim, now);
-    for (const e of r.explosions) this.showExplosion(e.point, e.weapon.id, e.shotSeq);
+    if (r.fired) this.localShot(r.fired, r.origin, r.aim, now, r.sim.mods);
+    for (const e of r.explosions) this.showExplosion(e.point, e.weapon.id, rocketKey(e));
   }
 
   /** Cosmetic only: the server decides hits. */
-  private localShot(weapon: WeaponDef, origin: Vec3, aim: Vec3, now: number): void {
+  private localShot(weapon: WeaponDef, origin: Vec3, aim: Vec3, now: number, mods: PlayerMods | undefined): void {
     const muzzle = this.viewModel.muzzlePosition();
     this.effects.muzzleFlash(muzzle, now);
     this.viewModel.kick();
@@ -377,9 +399,10 @@ export class Game {
     if (weapon.kind !== "hitscan") return;
 
     const range = weapon.range ?? 0;
-    for (let i = 0; i < (weapon.pellets ?? 1); i++) {
+    const pattern = shotPattern(weapon, mods);
+    for (let i = 0; i < pattern.count; i++) {
       // Client-side spread is cosmetic, so it needn't match the server's seeded RNG.
-      const dir = applySpread(aim, weapon.spreadRad ?? 0, Math.random);
+      const dir = applySpread(aim, pattern.spread, Math.random);
       let dist = rayBoxes(origin, dir, this.map.boxes, range);
       for (const remote of this.remotes.values()) {
         if (!remote.mesh.visible) continue;
@@ -444,21 +467,22 @@ export class Game {
   }
 
   private renderOwnRockets(alpha: number): void {
-    const live = new Set<number>();
-    for (const p of this.predictor?.projectiles ?? []) {
-      live.add(p.shotSeq);
-      let r = this.ownRockets.get(p.shotSeq);
+    const live = new Set<string>();
+    for (const p of this.predictor?.projectiles ?? ([] as Projectile[])) {
+      const key = rocketKey(p);
+      live.add(key);
+      let r = this.ownRockets.get(key);
       if (!r) {
         // New this tick: start it at the muzzle so it visibly leaves the gun.
         r = { mesh: new ProjectileMesh(this.view.scene), prev: this.viewModel.muzzlePosition() };
-        this.ownRockets.set(p.shotSeq, r);
+        this.ownRockets.set(key, r);
       }
       r.mesh.update(lerpVec3(r.prev, p.pos, alpha), p.vel);
     }
-    for (const [seq, r] of this.ownRockets) {
-      if (live.has(seq)) continue;
+    for (const [key, r] of this.ownRockets) {
+      if (live.has(key)) continue;
       r.mesh.dispose();
-      this.ownRockets.delete(seq);
+      this.ownRockets.delete(key);
     }
   }
 
@@ -521,13 +545,24 @@ export class Game {
       roundSub = `Next round in ${secondsUntil(s.phaseEndTick)}`;
     }
 
+    const picking = !!me && !alive && !me.away && me.offer.length > 0;
     if (me?.eliminated && s.phase === "playing") {
       centerText = "Eliminated";
       centerSub = "You're out until the next round";
+    } else if (picking && me.deaths === 0 && me.kills === 0 && !this.lastKillerName) {
+      centerText = ""; // the round-start draft: the picker's own title says it all
     } else if (me && !alive && s.phase !== "ended" && !me.away) {
       centerText = this.lastKillerName ? `Fragged by ${this.lastKillerName}` : "You died";
-      centerSub = me.respawnTick > 0 ? `Respawning in ${secondsUntil(me.respawnTick)}` : "";
+      const wait = me.respawnTick > 0 ? secondsUntil(me.respawnTick) : 0;
+      centerSub = me.respawnTick > 0 ? (wait > 0 ? `Respawning in ${wait}` : me.pendingPicks > 0 ? "Respawning when you pick" : "") : "";
     }
+    if (picking) {
+      const draft = me.deaths === 0 && me.kills === 0 && !this.lastKillerName;
+      this.ui.picker.show(me.offer.toArray(), draft ? "Pick a Rewire to spawn" : "Pick a Rewire", me.pendingPicks);
+    } else {
+      this.ui.picker.hide();
+    }
+    const rewireNames = (ids: string[]) => ids.map((id) => getRewire(id)?.name ?? id);
 
     const ammo = arms?.ammo[arms.current] ?? 0;
     this.ui.hud.update({
@@ -546,6 +581,7 @@ export class Game {
               ? String(ammo) // no reloading: just a count of what you have
               : `${ammo} / ${weapon.magazine ?? 0}`,
       slots: (arms?.slots ?? []).map((id, i) => ({ name: getWeapon(id)?.name ?? id, active: i === arms?.current })),
+      rewires: me ? rewireNames(me.rewires.toArray()) : [],
       roundText,
       roundSub,
       centerText,
@@ -563,6 +599,7 @@ export class Game {
           kills: p.kills,
           deaths: p.deaths,
           status: p.away ? "away" : p.eliminated ? "out" : !p.alive ? "dead" : p.lives >= 0 && s.phase === "playing" ? "♥".repeat(p.lives) : "",
+          rewires: rewireNames(p.rewires.toArray()).join(", "),
           me: id === this.room.sessionId,
         });
       });

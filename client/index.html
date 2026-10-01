@@ -91,6 +91,37 @@
       .room-info { margin-top: 10px; display: flex; align-items: center; gap: 10px; font-size: 15px; }
       #room-code { font-weight: 800; letter-spacing: 0.2em; }
       #copy-invite { font: inherit; font-size: 13px; padding: 5px 10px; border-radius: 5px; border: 1px solid #ffffff50; background: #ffffff18; color: inherit; cursor: pointer; }
+      .hud-rewires {
+        position: absolute; left: 20px; bottom: 96px; max-width: 45vw; font-size: 13px; color: #7fd3ff; opacity: 0.9;
+      }
+      .hud-feed li.note { background: #1d4e6b99; }
+      .rewire-picker {
+        position: fixed; left: 50%; top: 50%; transform: translate(-50%, -42%); z-index: 5;
+        width: min(760px, calc(100vw - 32px)); text-align: center; text-shadow: 0 1px 2px #000c;
+        padding: 18px; background: #05080ef2; border-radius: 14px; box-shadow: 0 10px 40px #000a;
+      }
+      .rewire-picker[hidden] { display: none; }
+      .rewire-picker h2 { margin: 0 0 12px; font-size: 24px; }
+      .rewire-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+      .rewire-card {
+        position: relative; display: flex; flex-direction: column; gap: 6px; padding: 14px 14px 12px; text-align: left;
+        font: inherit; color: inherit; background: #0b1220e6; border: 2px solid #ffffff30; border-radius: 10px; cursor: pointer;
+      }
+      .rewire-card strong { font-size: 18px; }
+      .rewire-card p { margin: 0; font-size: 14px; opacity: 0.9; }
+      .rewire-card em { font-size: 11px; text-transform: uppercase; letter-spacing: 0.12em; opacity: 0.75; }
+      .rewire-card.rarity-common { border-color: #9aa3ad; }
+      .rewire-card.rarity-rare { border-color: #4aa8ff; }
+      .rewire-card.rarity-rare em { color: #4aa8ff; }
+      .rewire-card.rarity-wild { border-color: #d36bff; box-shadow: 0 0 18px #d36bff55; }
+      .rewire-card.rarity-wild em { color: #d36bff; }
+      .rewire-card:hover, .rewire-card.chosen { background: #1b2a44f0; }
+      .rewire-card.chosen { outline: 3px solid #ffd24a; }
+      .rewire-key {
+        position: absolute; top: 8px; right: 10px; font-size: 13px; font-weight: 800; padding: 1px 7px;
+        border-radius: 4px; background: #ffffff22;
+      }
+      .rewire-hint { margin: 10px 0 0; font-size: 13px; opacity: 0.8; }
       .debug-overlay {
         position: fixed; top: 8px; right: 8px; margin: 0; padding: 8px 10px;
         background: #000b; color: #9f9; font: 12px/1.4 ui-monospace, Consolas, monospace; pointer-events: none;

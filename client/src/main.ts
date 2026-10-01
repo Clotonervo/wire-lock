@@ -8,6 +8,7 @@ import { createScene } from "./render/scene";
 import { DebugOverlay } from "./ui/debugOverlay";
 import { Hud } from "./ui/hud";
 import { Lobby } from "./ui/lobby";
+import { RewirePicker } from "./ui/rewirePicker";
 import { Scoreboard } from "./ui/scoreboard";
 
 const container = document.getElementById("game");
@@ -71,7 +72,7 @@ async function main() {
     });
   }
 
-  const ui = { overlay, hud: new Hud(hudRoot), scoreboard: new Scoreboard(document.body), sfx };
+  const ui = { overlay, hud: new Hud(hudRoot), scoreboard: new Scoreboard(document.body), sfx, picker: new RewirePicker(document.body) };
   const game = new Game(room, map, view, input, ui);
   game.start();
 

@@ -42,6 +42,10 @@ export class InputController {
   onMuteToggle: () => void = () => {};
   /** Called on any click, so audio can start (browsers require a user gesture). */
   onGesture: () => void = () => {};
+  /** Number keys 1–9, locked or not. The game decides: Rewire pick, or weapon slot (which needs the pointer locked). */
+  onNumberKey: (n: number) => void = (n) => {
+    if (this.locked) this.requestSlot(n - 1);
+  };
 
   private keys = new Set<string>();
   private buttons = new Set<number>();
@@ -88,10 +92,10 @@ export class InputController {
         return;
       }
       if (e.code === "KeyM" && !e.repeat) this.onMuteToggle();
+      const digit = /^Digit([1-9])$/.exec(e.code);
+      if (digit && !e.repeat) this.onNumberKey(Number(digit[1]));
       if (!this.locked) return;
       if (e.code === "Space") e.preventDefault();
-      const digit = /^Digit([1-9])$/.exec(e.code);
-      if (digit) this.requestSlot(Number(digit[1]) - 1);
       this.keys.add(e.code);
       this.tappedKeys.add(e.code);
     });

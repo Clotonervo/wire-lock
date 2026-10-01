@@ -5,6 +5,8 @@ export interface ScoreRow {
   deaths: number;
   /** "away", "out", "dead", hearts for lives left, or empty. */
   status: string;
+  /** Rewire names, comma-separated. */
+  rewires: string;
   me: boolean;
 }
 
@@ -22,7 +24,7 @@ export class Scoreboard {
     this.title = document.createElement("h2");
     const table = document.createElement("table");
     const head = table.createTHead().insertRow();
-    for (const h of ["Player", "Kills", "Deaths", ""]) head.insertCell().textContent = h;
+    for (const h of ["Player", "Kills", "Deaths", "", "Rewires"]) head.insertCell().textContent = h;
     this.body = table.createTBody();
     this.root.append(this.title, table);
     parent.appendChild(this.root);
@@ -46,6 +48,7 @@ export class Scoreboard {
       tr.insertCell().textContent = String(r.kills);
       tr.insertCell().textContent = String(r.deaths);
       tr.insertCell().textContent = r.status;
+      tr.insertCell().textContent = r.rewires;
     }
   }
 }
