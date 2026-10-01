@@ -277,11 +277,13 @@ Rewires are what make Wire Lock different from other silly shooters. Inspired by
 ### 8b.1 Rules
 
 - **On in Deathmatch only** for now (`ModeDef.rewires: true`). Gun Game and One in the Chamber stay pure, since bonus bullets would break One in the Chamber.
-- **You earn a pick every time you die.** It's offered on the respawn screen as *choose 1 of 3*. This doubles as catch-up: losing players get stronger, which damps snowballing.
-- **Kill streaks bank extra picks.** Every `REWIRE_STREAK_KILLS` (3) kills without dying banks one extra pick, so kills 3, 6, 9… each bank one. Banked picks aren't offered mid-fight; they're offered **at your next death**, one after another on the same respawn screen. The kill feed announces the streak.
-- **The respawn timer never waits.** If it runs out while picks are still pending, each remaining offer is resolved by picking one of its three at random. You never lose a pick, and you never stall the game.
+- **Everyone starts each round with one pick.** When a round starts, every player sees a *choose 1 of 3* offer before spawning, like a short draft, and spawns as soon as they've chosen. The round clock runs from the start as normal. Players who join mid-round get the same starting pick before their first spawn.
+- **You earn a pick every `REWIRE_DEATHS_PER_PICK` (2) deaths,** so on deaths 2, 4, 6…. It's offered on the respawn screen. This doubles as catch-up: losing players get stronger, which damps snowballing.
+- **Kill streaks bank extra picks.** Every `REWIRE_STREAK_KILLS` (3) kills without dying banks one extra pick, so kills 3, 6, 9… each bank one. Banked picks aren't offered mid-fight; they're offered **at your next death**, whether or not that death earns a pick itself, one after another on the same respawn screen. The kill feed announces the streak.
+- **Spawning waits for your choices.** You respawn when the respawn timer has run out **and** you've made every pending pick, whichever is later. Picking quickly costs nothing; dithering keeps you out of the fight. There's no random auto-pick.
+  - The away timeout (§5.2) still applies. A player who has left the tab stops sending input, goes away after `AWAY_TIMEOUT_MS`, and keeps their pending picks for when they come back.
 - **Rewires last for the round.** They reset when a new round starts. None are earned during warm-up or on the end-of-round screen.
-- **Cap:** at most `MAX_REWIRES_PER_ROUND` (6) per player per round. After that, deaths don't offer more, and the streak still shows in the kill feed for bragging rights. A first-to-20 Deathmatch can involve a lot of deaths, so without a cap builds would get absurd. The cap is the first tunable to revisit after playtesting.
+- **Cap:** at most `MAX_REWIRES_PER_ROUND` (6) per player per round, counting the starting pick. After that no more are offered, and streaks still show in the kill feed for bragging rights. This is a safety net more than a target: with a pick every 2nd death, typical players should land around 3–5.
 - **Offers:**
   - Each offer is 3 distinct Rewires, rolled by the **server** (seeded RNG) and weighted by rarity.
   - A Rewire you already own isn't offered again unless it's stackable and below its stack limit.
@@ -356,18 +358,19 @@ Effects only the server needs (damage multipliers, heal on kill, explode on deat
   - `PlayerState.rewires` (owned ids, in pick order) and `PlayerState.pendingPicks` (count) are synced.
   - The current offer goes **only to its owner**, as a `rewireOffer` message (`{ options: string[] }`).
   - The player answers with a `pickRewire` message (`{ id }`), which the server validates against the outstanding offer.
-- **Respawn screen:** when you're dead with picks pending, the centre shows three cards (name, rarity colour, one-line description). You choose with a click or keys **1/2/3** (weapon-slot keys aren't needed while dead). The kill/respawn text moves above the cards.
+- **Round-start draft:** the same cards appear at round start, over a dimmed view of the arena, with "Pick a Rewire to spawn" above them.
+- **Respawn screen:** when you're dead with picks pending, the centre shows three cards (name, rarity colour, one-line description). You choose with a click or keys **1/2/3** (weapon-slot keys aren't needed while dead). The kill/respawn text moves above the cards and reads "Respawning when you pick" once the timer is done.
 - **HUD:** your Rewires show as a compact list near the health readout.
 - **Scoreboard:** everyone's Rewires are listed, so players know who to fear.
 - **Kill feed:** shows "X is on a streak!" when a pick is banked.
 
 ### 8b.5 Tunables (first guesses, revisit after playtesting)
 
-`REWIRE_STREAK_KILLS = 3`, `MAX_REWIRES_PER_ROUND = 6`, `REWIRE_OFFER_SIZE = 3`, and rarity weights common 60 / rare 30 / wild 10.
+`REWIRE_DEATHS_PER_PICK = 2`, `REWIRE_STREAK_KILLS = 3`, `MAX_REWIRES_PER_ROUND = 6` (including the starting pick), `REWIRE_OFFER_SIZE = 3`, and rarity weights common 60 / rare 30 / wild 10.
 
 ### 8b.6 Open questions
 
-- Is a pick on *every* death too many even with the cap? Alternatives: every 2nd death, or a cap of 4.
+- Does waiting for picks get abused, e.g. sitting on the respawn screen to avoid dying again? It costs you kills, so probably not, but watch for it.
 - Should rarer Rewires become more likely later in the round, as in ARAM Mayhem's later picks?
 - Overhead icons for others' Rewires, or the scoreboard only?
 
@@ -441,7 +444,7 @@ Each milestone should end with the game in a runnable state and the acceptance c
 - ✅ A friend can open a link and join a room on the live deployment. Deployed at https://game.samhopkins.dev; all three modes playable.
 
 ### M5 — Rewires
-- Rewire framework (§8b): definitions + registry, `PlayerMods` folded into the shared simulation, server-rolled offers, picks on death plus streak-banked picks, round cap and reset.
+- Rewire framework (§8b): definitions + registry, `PlayerMods` folded into the shared simulation, server-rolled offers, a starting pick each round, a pick every 2nd death plus streak-banked picks, spawning that waits for picks, round cap and reset.
 - Respawn-screen pick cards, HUD list, scoreboard, streak announcements.
 - The v1 set of 10 Rewires (§8b.3), Deathmatch only.
 - ✅ In a live Deathmatch, players pick Rewires while respawning; movement/firing Rewires predict with zero correction; a round with several Rewires each is playable and fun enough to want another.
