@@ -63,10 +63,26 @@ export interface SpawnPoint {
   team?: string;
 }
 
+/** A pad that launches whoever steps on it (DESIGN.md §6.2). */
+export interface JumpPad {
+  min: Vec3;
+  max: Vec3;
+  /** Velocity it gives you, units/s. */
+  launch: Vec3;
+}
+
+export type PickupKind = "health";
+
+export interface PickupDef {
+  pos: Vec3;
+  kind: PickupKind;
+}
+
 export interface MapDef {
   id: string;
   name: string;
   boxes: Box[];
   spawns: SpawnPoint[];
-  pickups?: { pos: Vec3; kind: string }[];
+  jumpPads?: JumpPad[];
+  pickups?: PickupDef[];
 }

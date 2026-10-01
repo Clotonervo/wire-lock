@@ -1,4 +1,4 @@
-import { movePlayer } from "./collision";
+import { boxesOverlap, movePlayer, playerBox } from "./collision";
 import {
   ADRENALINE_SPEED_MUL,
   AIR_ACCEL,
@@ -11,6 +11,7 @@ import {
   JUMP_SPEED,
   MAX_FALL_SPEED,
   MAX_SPEED,
+  PAD_REARM_VY,
   STOP_SPEED,
 } from "./constants";
 import { DEFAULT_MODS, type PlayerMods } from "./rewires";
@@ -97,9 +98,22 @@ export function stepPlayer(
 
   if (hit.x) vel.x = 0;
   if (hit.z) vel.z = 0;
-  const onGround = hit.y && vel.y < 0;
+  let onGround = hit.y && vel.y < 0;
   if (hit.y) vel.y = 0;
   if (onGround) airJumpsUsed = 0;
+
+  // Jump pads: standing in one launches you (part of movement, so it's predicted).
+  if (vel.y <= PAD_REARM_VY && map.jumpPads) {
+    const body = playerBox(pos);
+    const pad = map.jumpPads.find((p) => boxesOverlap(body, p));
+    if (pad) {
+      vel.x = pad.launch.x;
+      vel.y = pad.launch.y;
+      vel.z = pad.launch.z;
+      onGround = false;
+      airJumpsUsed = 0;
+    }
+  }
 
   return { pos, vel, onGround, airJumpsUsed, jumpHeld: input.jump, dashCooldownMs, altHeld: altFire, boostMs };
 }

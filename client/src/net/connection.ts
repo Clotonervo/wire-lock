@@ -32,8 +32,8 @@ export async function pingServer(timeoutMs: number): Promise<"ok" | "blocked" | 
   }
 }
 
-export function createRoom(name: string, mode: string): Promise<ArenaRoom> {
-  return client.create<ArenaStateView>(ROOM_NAME, { name, mode });
+export function createRoom(name: string, mode: string, map: string): Promise<ArenaRoom> {
+  return client.create<ArenaStateView>(ROOM_NAME, { name, mode, map });
 }
 
 export function joinRoom(code: string, name: string): Promise<ArenaRoom> {

@@ -4,6 +4,7 @@ import {
   AFTERBURN_PULSES,
   AWAY_TIMEOUT_MS,
   DEFAULT_MAP_ID,
+  HEALTH_PACK_HEAL,
   HEADSHOT_FROM,
   DEFAULT_MODE_ID,
   MAX_ROOMS,
@@ -18,6 +19,9 @@ import {
   MAX_PLAYERS_PER_ROOM,
   PATCH_RATE_MS,
   PAUSE_TIMEOUT_MS,
+  PICKUP_HEIGHT,
+  PICKUP_RADIUS,
+  PICKUP_RESPAWN_MS,
   PLAYER_HEIGHT,
   REGEN_DELAY_MS,
   REWIRES,
@@ -66,7 +70,7 @@ import type {
 import { config } from "../config";
 import { log } from "../log";
 import { playerJoined, playerLeft, recordTick } from "../metrics";
-import { ArenaState, PlayerState, ProjectileState, type RoundPhase } from "../schema/ArenaState";
+import { ArenaState, PickupState, PlayerState, ProjectileState, type RoundPhase } from "../schema/ArenaState";
 import { scaleDamage } from "../sim/damage";
 import { resolveHitscan } from "../sim/hitscan";
 import { PositionHistory, rewindTime } from "../sim/lagCompensation";
@@ -111,6 +115,8 @@ export class ArenaRoom extends Room<{ state: ArenaState }> {
   private nextColor = 0;
   private nextPlayerNumber = 1;
   private shotSeed = 1;
+  /** Tick each taken pickup comes back, by pickup key. */
+  private pickupRespawn = new Map<string, number>();
   /** Round time left when the round was paused, in ticks (0 = untimed). */
   private pausedRemainingTicks = 0;
   private readonly history = new PositionHistory();
@@ -120,14 +126,14 @@ export class ArenaRoom extends Room<{ state: ArenaState }> {
     pickRewire: (client: Client, payload: unknown) => this.pickRewire(client.sessionId, payload),
   };
 
-  override async onCreate(options?: { mode?: unknown }) {
+  override async onCreate(options?: { mode?: unknown; map?: unknown }) {
     if (activeRoomCount() >= MAX_ROOMS) throw new ServerError(503, "The server is full right now. Try again in a bit.");
     // Rooms are code-only (DESIGN.md §13): a short code instead of Colyseus's id, and never matched at random.
     this.roomId = claimRoomCode();
     await this.setPrivate(true);
 
     const requested = typeof options?.mode === "string" && options.mode in MODES ? options.mode : DEFAULT_MODE_ID;
-    const map = getMap(DEFAULT_MAP_ID);
+    const map = (typeof options?.map === "string" ? getMap(options.map) : undefined) ?? getMap(DEFAULT_MAP_ID);
     const mode = createMode(requested, config.killLimit ? { scoreLimit: config.killLimit } : {});
     if (!map || !mode) throw new Error(`unknown map ${DEFAULT_MAP_ID} or mode ${requested}`);
     this.map = map;
@@ -141,6 +147,9 @@ export class ArenaRoom extends Room<{ state: ArenaState }> {
       phase: "waiting" satisfies RoundPhase,
       phaseEndTick: 0,
       winner: "",
+    });
+    (map.pickups ?? []).forEach((p, i) => {
+      this.state.pickups.set(String(i), new PickupState({ kind: p.kind, x: p.pos.x, y: p.pos.y, z: p.pos.z, active: true }));
     });
     // Accumulator-based, so the long-run rate is exactly TICK_RATE_HZ (plain setInterval(33.3) drifts to ~29.4 Hz,
     // which makes client inputs pile up and forces catch-up steps that look like hitches to other players).
@@ -268,6 +277,7 @@ export class ArenaRoom extends Room<{ state: ArenaState }> {
       this.tickRewireEffects(id, player, rt);
     });
 
+    this.tickPickups();
     this.mode.onTick?.(this.modeRoom(), TICK_DT);
     this.updateRound();
 
@@ -610,6 +620,8 @@ export class ArenaRoom extends Room<{ state: ArenaState }> {
     const roundTime = this.mode.def.roundTimeSec;
     s.phaseEndTick = roundTime ? s.tick + Math.round(roundTime * TICK_RATE_HZ) : 0;
     s.projectiles.clear();
+    s.pickups.forEach((p) => (p.active = true));
+    this.pickupRespawn.clear();
     const draft = !!this.mode.def.rewires;
     s.players.forEach((p, id) => {
       p.kills = 0;
@@ -739,6 +751,27 @@ export class ArenaRoom extends Room<{ state: ArenaState }> {
       if (this.rewireRoom(killer, krt.banked) > 0) krt.banked++;
       this.broadcastEvent("streak", { player: killerId, kills: krt.streak });
     }
+  }
+
+  /** Health packs: heal whoever touches one (if hurt), then respawn it later. */
+  private tickPickups() {
+    const tick = this.state.tick;
+    this.state.pickups.forEach((pickup, key) => {
+      if (!pickup.active) {
+        if (tick >= (this.pickupRespawn.get(key) ?? 0)) pickup.active = true;
+        return;
+      }
+      for (const [id, p] of this.state.players) {
+        if (!p.alive || p.health >= p.maxHealth) continue;
+        const dy = p.y - pickup.y;
+        if (Math.hypot(p.x - pickup.x, p.z - pickup.z) > PICKUP_RADIUS || dy < -0.5 || dy > PICKUP_HEIGHT) continue;
+        p.health = Math.min(p.maxHealth, p.health + HEALTH_PACK_HEAL);
+        pickup.active = false;
+        this.pickupRespawn.set(key, tick + Math.round(PICKUP_RESPAWN_MS / TICK_MS));
+        this.broadcastEvent("pickup", { player: id, kind: pickup.kind, pos: { x: pickup.x, y: pickup.y, z: pickup.z } });
+        break;
+      }
+    });
   }
 
   /** Afterburn: set `target` burning (refreshing any burn already on them). */

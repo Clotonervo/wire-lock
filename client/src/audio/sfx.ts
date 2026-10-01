@@ -10,7 +10,9 @@ export type SoundName =
   | "hurt"
   | "reload"
   | "switch"
-  | "melee";
+  | "melee"
+  | "heal"
+  | "pad";
 
 const MUTE_KEY = "wire-lock.muted";
 const DEFAULT_VOLUME = 0.5;
@@ -113,6 +115,13 @@ export class Sfx {
       case "reload":
         this.noiseBurst(out, t, { type: "highpass", freq: 3000, q: 0.7 }, 0.35, 0.03);
         this.noiseBurst(out, t + 0.15, { type: "highpass", freq: 2500, q: 0.7 }, 0.35, 0.04);
+        break;
+      case "heal":
+        this.tone(out, t, "sine", 520, 1040, 0.3, 0.25);
+        break;
+      case "pad":
+        this.tone(out, t, "triangle", 180, 720, 0.4, 0.3);
+        this.noiseBurst(out, t, { type: "bandpass", freq: 600, freqEnd: 2400, q: 1 }, 0.25, 0.3);
         break;
       case "melee":
         this.noiseBurst(out, t, { type: "bandpass", freq: 2200, freqEnd: 500, q: 1.5 }, 0.45, 0.16);

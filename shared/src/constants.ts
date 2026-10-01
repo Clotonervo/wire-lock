@@ -79,6 +79,14 @@ export const MAX_FALL_SPEED = 40;
 /** Pitch is clamped to just short of straight up/down (radians). */
 export const MAX_PITCH = Math.PI / 2 - 0.01;
 
+/** Jump pads only fire for players not already rising faster than this, so one press = one launch. */
+export const PAD_REARM_VY = 1;
+/** Health packs: how much they heal, how soon they come back, and how close you must be. */
+export const HEALTH_PACK_HEAL = 50;
+export const PICKUP_RESPAWN_MS = 15_000;
+export const PICKUP_RADIUS = 1;
+export const PICKUP_HEIGHT = 1.5;
+
 /** Players falling below this height are respawned. */
 export const KILL_Y = -20;
 

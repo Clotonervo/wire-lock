@@ -19,6 +19,8 @@ export interface ServerMessages {
   streak: { player: string; kills: number };
   /** Copycat copied `rewire` from `from` to `player`. */
   copied: { player: string; from: string; rewire: string };
+  /** `player` picked up a health pack (or other pickup). */
+  pickup: { player: string; kind: string; pos: Vec3 };
   /** Second Wind saved `player` from a killing hit. */
   secondWind: { player: string };
   roundStart: Record<string, never>;

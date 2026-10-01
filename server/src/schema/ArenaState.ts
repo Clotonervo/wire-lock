@@ -80,6 +80,19 @@ export const ProjectileState = schema(
 );
 export type ProjectileState = SchemaType<typeof ProjectileState>;
 
+/** A map pickup (health pack). Keyed by its index in the map's pickup list. */
+export const PickupState = schema(
+  {
+    kind: t.string(),
+    x: t.float64(),
+    y: t.float64(),
+    z: t.float64(),
+    active: t.boolean(),
+  },
+  "PickupState",
+);
+export type PickupState = SchemaType<typeof PickupState>;
+
 export type RoundPhase = "waiting" | "playing" | "paused" | "ended";
 
 export const ArenaState = schema(
@@ -98,6 +111,7 @@ export const ArenaState = schema(
     winner: t.string(),
     players: t.map(PlayerState),
     projectiles: t.map(ProjectileState),
+    pickups: t.map(PickupState),
   },
   "ArenaState",
 );

@@ -71,6 +71,14 @@ export interface ProjectileView {
   ageMs: number;
 }
 
+export interface PickupView {
+  kind: string;
+  x: number;
+  y: number;
+  z: number;
+  active: boolean;
+}
+
 export type RoundPhase = "waiting" | "playing" | "paused" | "ended";
 
 interface SyncedMap<V> {
@@ -92,6 +100,7 @@ export interface ArenaStateView {
   winner: string;
   players: SyncedMap<PlayerView>;
   projectiles: SyncedMap<ProjectileView>;
+  pickups: SyncedMap<PickupView>;
 }
 
 export function readMove(p: PlayerView): PlayerMoveState {

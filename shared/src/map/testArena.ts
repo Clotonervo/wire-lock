@@ -53,6 +53,11 @@ export const testArena: MapDef = {
     // A long low wall to hide behind
     box(-15, 0, -1, -9, 1.5, 0, WALL),
   ],
+  pickups: [
+    { pos: { x: 0, y: 2, z: 0 }, kind: "health" },
+    { pos: { x: -16, y: 0, z: 8 }, kind: "health" },
+    { pos: { x: 16, y: 0, z: -8 }, kind: "health" },
+  ],
   spawns: [
     spawnFacingCentre(-SPAWN_INSET, -SPAWN_INSET),
     spawnFacingCentre(SPAWN_INSET, SPAWN_INSET),

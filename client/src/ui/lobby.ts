@@ -1,4 +1,4 @@
-import { DEFAULT_MODE_ID, MAX_NAME_LENGTH, MODES, ROOM_CODE_LENGTH, normalizeRoomCode } from "@wire-lock/shared";
+import { DEFAULT_MAP_ID, DEFAULT_MODE_ID, MAPS, MAX_NAME_LENGTH, MODES, ROOM_CODE_LENGTH, normalizeRoomCode } from "@wire-lock/shared";
 import { createRoom, describeJoinError, joinRoom, pingServer, type ArenaRoom } from "../net/connection";
 
 const NAME_KEY = "wire-lock.name";
@@ -89,6 +89,8 @@ export class Lobby {
 
       const mode = el("select");
       for (const m of Object.values(MODES)) mode.append(el("option", { value: m.id, textContent: m.name, selected: m.id === DEFAULT_MODE_ID }));
+      const mapSelect = el("select");
+      for (const m of Object.values(MAPS)) mapSelect.append(el("option", { value: m.id, textContent: m.name, selected: m.id === DEFAULT_MAP_ID }));
       const blurb = el("p", { className: "lobby-note" });
       const showBlurb = () => (blurb.textContent = MODES[mode.value]?.blurb ?? "");
       mode.addEventListener("change", showBlurb);
@@ -118,7 +120,7 @@ export class Lobby {
         }
       };
 
-      createBtn.addEventListener("click", () => void attempt((n) => createRoom(n, mode.value)));
+      createBtn.addEventListener("click", () => void attempt((n) => createRoom(n, mode.value, mapSelect.value)));
       const join = () => {
         const c = normalizeRoomCode(code.value);
         if (!c) {
@@ -134,7 +136,7 @@ export class Lobby {
       code.addEventListener("input", () => (code.value = code.value.toUpperCase()));
 
       const createRow = el("div", { className: "lobby-row" });
-      createRow.append(mode, createBtn);
+      createRow.append(mode, mapSelect, createBtn);
       const joinRow = el("div", { className: "lobby-row" });
       joinRow.append(code, joinBtn);
       const nameLabel = el("label", { textContent: "Name" });

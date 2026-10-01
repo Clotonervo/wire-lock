@@ -37,6 +37,7 @@ import { projectilesOf, readSim, type ArenaStateView, type PlayerView } from "./
 import { Effects } from "./render/effects";
 import { buildMapMesh } from "./render/mapMesh";
 import { PlayerMesh } from "./render/playerMesh";
+import { PickupMesh } from "./render/pickupMesh";
 import { ProjectileMesh } from "./render/projectileMesh";
 import type { SceneContext } from "./render/scene";
 import { ViewModel } from "./render/viewModel";
@@ -57,6 +58,8 @@ const SHOWN_EXPLOSIONS_KEPT = 32;
 /** Spectator chase camera: how far behind and above the watched player. */
 const SPECTATE_DISTANCE = 3.5;
 const SPECTATE_HEIGHT = 2.4;
+/** Upward speed gained in one tick that only a jump pad can give (a jump is JUMP_SPEED = 7). */
+const PAD_LAUNCH_DETECT = 9;
 
 interface Remote {
   buffer: SnapshotBuffer;
@@ -107,6 +110,7 @@ export class Game {
   /** Explosions from others, held until our delayed view of the world reaches them. */
   private pendingExplosions: { at: Vec3; weapon: string; t: number }[] = [];
   private shownOwnExplosions: string[] = [];
+  private pickups = new Map<string, PickupMesh>();
   private wasAlive = false;
   /** Who we're watching while eliminated (spectator camera). */
   private spectating: string | null = null;
@@ -166,6 +170,10 @@ export class Game {
     this.listen("explode", (m) => this.onExplode(m));
     this.listen("roundStart", () => (this.lastKillerName = ""));
     this.listen("roundEnd", () => {});
+    this.listen("pickup", (m) => {
+      if (m.player === this.room.sessionId) this.ui.sfx.play("heal");
+      else this.ui.sfx.play("heal", m.pos);
+    });
     this.listen("copied", (m) => {
       const mine = m.player === this.room.sessionId;
       const what = getRewire(m.rewire)?.name ?? m.rewire;
@@ -399,9 +407,10 @@ export class Game {
       const r = this.ownRockets.get(rocketKey(p));
       if (r) r.prev = { ...p.pos };
     }
+    const prevVy = this.predictor.state.vel.y;
     const result = this.predictor.apply(cmd, this.canFire);
     this.outbox.push(cmd);
-    this.predictedEffects(result, now);
+    this.predictedEffects(result, now, prevVy);
 
     // While eliminated, a click watches the next player.
     if (this.me?.eliminated && sampled.fire && !this.spectateFireHeld) this.spectating = this.nextSpectateTarget(this.spectating);
@@ -439,7 +448,9 @@ export class Game {
   }
 
   /** Effects and sounds for what our own input just did. Replays during reconciliation don't come through here. */
-  private predictedEffects(r: InputStepResult, now: number): void {
+  private predictedEffects(r: InputStepResult, now: number, prevVy: number): void {
+    // A jump pad launch shows up as a big jump in upward speed that our own jump can't make.
+    if (r.sim.move.vel.y - prevVy > PAD_LAUNCH_DETECT) this.ui.sfx.play("pad");
     if (r.switched) this.ui.sfx.play("switch");
     if (r.reloadStarted) this.ui.sfx.play("reload");
     if (r.fired) this.localShot(r.fired, r.origin, r.aim, now, r.sim.mods);
@@ -508,6 +519,7 @@ export class Game {
     this.renderOwnRockets(alpha);
     const serverNow = this.serverClock.now(now);
     if (serverNow !== null) this.renderRemote(serverNow - INTERP_DELAY_MS);
+    this.renderPickups(now);
     this.viewModel.update(frameMs);
     this.effects.update(now);
     const cam = this.view.camera.position;
@@ -532,6 +544,17 @@ export class Game {
       lerp(this.prevPos.y, cur.y, alpha) + o.y + PLAYER_EYE_HEIGHT,
       lerp(this.prevPos.z, cur.z, alpha) + o.z,
     );
+  }
+
+  private renderPickups(now: number): void {
+    this.room.state.pickups.forEach((p, key) => {
+      let mesh = this.pickups.get(key);
+      if (!mesh) {
+        mesh = new PickupMesh(this.view.scene, { x: p.x, y: p.y, z: p.z });
+        this.pickups.set(key, mesh);
+      }
+      mesh.update(p.active, now / 1000);
+    });
   }
 
   private renderOwnRockets(alpha: number): void {
