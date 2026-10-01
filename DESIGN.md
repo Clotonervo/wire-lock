@@ -186,11 +186,16 @@ The server validates each command (clamp values, reject absurd `dt`, drop out-of
 interface MapDef {
   id: string;
   name: string;
-  boxes: { min: Vec3; max: Vec3; color?: string }[];
-  spawns: { pos: Vec3; yaw: number; team?: string }[];
-  pickups?: { pos: Vec3; kind: string }[];
+  boxes: { min: Vec3; max: Vec3; color?: string; invisible?: boolean }[];
+  spawns: { pos: Vec3; yaw: number }[];
+  jumpPads?: { min: Vec3; max: Vec3; launch: Vec3 }[];
+  pickups?: { pos: Vec3; kind: "health" }[];
 }
 ```
+- Maps can be TypeScript (`testArena.ts`) or JSON (`scaffold.json`). JSON maps go through `parseMapDef`, which throws with the path of the first problem (e.g. `boxes[3].min.x should be a number`), so a broken map fails at start-up. `shared/test/maps.test.ts` checks every registered map: spawns are clear of geometry and grounded, and pickups are out in the open.
+- **Scaffold** (the default) has height: north and south platforms (top y=4) joined by a bridge you can walk under, east and west ledges (y=2) with crate steps, pillars and crates. The lobby has a map select.
+- **Jump pads** are part of `stepPlayer`, so they're predicted. Touching one while not already rising (`PAD_REARM_VY`) sets your velocity to its `launch`. Scaffold's four pads each land you on a platform (tested).
+- **Health packs** are server-side: `HEALTH_PACK_HEAL` (50) to a hurt player within `PICKUP_RADIUS`, back after `PICKUP_RESPAWN_MS` (15 s). They are synced as `state.pickups` and reset each round.
 - Collision is swept AABB-vs-AABB, resolved axis by axis. The client builds meshes from the same data.
 - Keep maps small (arena-sized) and blocky.
 
@@ -264,7 +269,10 @@ interface GameMode {
 **Implemented (M4):** the room hands modes a read-only `ModeRoom` (players, phase, timer) plus a small `ModeApi` (`setLoadout`, `addAmmo`, `setKills`, `setLives`, `eliminate`), so mode code never touches Colyseus state. Rules live in `server/src/sim/modes/`, and the data both sides need (names, blurbs, the Gun Game ladder) lives in `shared/src/modes/`. Mode changes to weapons and ammo reach the owner's prediction through the normal reconcile, because arms are synced state.
 - **Gun Game:** Rocket Launcher ×2 → Shotgun ×2 → Pistol ×2 → Wrench. A wrench kill wins, and getting wrenched costs the victim a kill.
 - **One in the Chamber:** Chamber Pistol (one-hit, no reloads) plus Wrench. You start with 1 bullet and get +1 per kill. 3 lives; eliminated players spectate, and people joining mid-round wait. Last standing wins, or on timeout the most lives, then most kills.
-**Backlog:** Gun Game (each kill advances your weapon), One in the Chamber (pistol, 1 bullet, one-hit kills, +1 ammo per kill), Low Gravity, Everyone Tiny, King of the Hill.
+- **Spectating:** an eliminated player gets a chase camera behind a living player (`Spectating <name> · click to switch`).
+- **Pausing:** if a live round drops below `minPlayers` (someone leaves or goes away), the round **pauses** (phase `paused`) instead of resetting. The clock stops and scores are kept. If enough players are back within `PAUSE_TIMEOUT_MS` (60 s), the round resumes where it left off; otherwise it goes back to warm-up.
+
+**Backlog:** Low Gravity, Everyone Tiny, King of the Hill.
 
 The mode is chosen when a room is created (a query param or lobby option) and is exposed in synced state so the client can show mode-specific HUD.
 
@@ -408,7 +416,7 @@ The rarity weights stay common 60 / rare 30 / wild 10. With 30 Rewires the pool 
 ## 9. Client
 
 ### 9.1 Rendering (Three.js)
-- One `WebGLRenderer`, `PerspectiveCamera` (FOV 75) attached to the local player's eye.
+- One `WebGLRenderer`, `PerspectiveCamera` (FOV from settings, default 75) attached to the local player's eye.
 - Map meshes built once from `MapDef` boxes; merge geometry per material for performance.
 - Remote players are capsule meshes with a simple "gun" box; tint by player colour.
 - Effects: muzzle flash sprite, tracer line (fades over ~80 ms), impact puff, simple explosion sphere.
@@ -417,7 +425,7 @@ The rarity weights stay common 60 / rare 30 / wild 10. With 30 Rewires the pool 
 ### 9.2 Input
 - Click canvas → request pointer lock. Esc releases it and shows the menu.
 - WASD move, Space jump, mouse look, LMB fire, RMB alt-fire, 1–9 / scroll to switch weapons, R reload, Tab scoreboard.
-- Mouse sensitivity setting persisted in `localStorage`, wrapped in try/catch.
+- Settings on the pause screen (`client/src/settings.ts`, `ui/settingsPanel.ts`): mouse sensitivity, volume and field of view (60–110°). They apply live and persist in `localStorage` (wrapped in try/catch).
 
 ### 9.3 UI (DOM overlay, no framework)
 - Join screen: name input, room code (or "create room" with mode select).
@@ -455,7 +463,7 @@ Each milestone should end with the game in a runnable state and the acceptance c
 - Deathmatch mode: kills, scores, win condition, round reset.
 - HUD, kill feed, scoreboard.
 - ✅ **Done.** Two players can play a full deathmatch round to completion. A player who hides their tab disappears from the world after the timeout and respawns when they return.
-- Known limitation: dropping below `minPlayers` (e.g. one of two players going away) returns the room to warm-up, and the round restarts with scores reset when they return.
+- ~~Known limitation: dropping below `minPlayers` resets the round.~~ Fixed: the round now pauses for up to 60 s (§8).
 
 ### M3 — Weapon variety
 - Shotgun and Rocket Launcher (projectiles, splash, knockback).
@@ -481,9 +489,10 @@ Each milestone should end with the game in a runnable state and the acceptance c
 
 ### M6+ — Silly stuff (open-ended)
 - Work through the silly weapons and modes backlog.
-- Pickups (health, weapon spawns), jump pads.
+- ~~Health pickups, jump pads, JSON map loading, a second map with height.~~ Done (§6.2). Weapon spawns still open.
 - ~~Lag compensation for hitscan.~~ Done (§5.5).
-- Simple map editor or JSON map loading.
+- ~~Settings menu (sensitivity, volume, FOV), round pause, spectator camera.~~ Done (§8, §9.2).
+- Simple map editor.
 
 ---
 
@@ -510,4 +519,4 @@ Each milestone should end with the game in a runnable state and the acceptance c
 
 ## 13. Open questions
 
-- Render's free instances get a small CPU share. Watch the tick timing with a full room, and move to the cheapest paid tier if it can't keep 30 Hz.
+- Render's free instances get a small CPU share. `/health` now reports tick timing (`tickMs.avg/p95/max` over the last 30 s, plus player count). Locally, 8 bots running, jumping and firing on Scaffold cost **0.28 ms avg / 0.97 ms p95 / 2.6 ms max** per tick against a 33 ms budget, so there's roughly 30× headroom. Check `/health` during a real full game on Render, and move to the cheapest paid tier only if p95 gets near 33 ms.
