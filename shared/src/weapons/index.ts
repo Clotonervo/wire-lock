@@ -1,5 +1,6 @@
 import { chamberPistol } from "./chamberPistol";
 import { deadMansSwitchBlast } from "./deadMansSwitch";
+import { afterburnFlame, clusterBomblet } from "./effects";
 import { pistol } from "./pistol";
 import { rocketLauncher } from "./rocketLauncher";
 import { shotgun } from "./shotgun";
@@ -7,7 +8,7 @@ import type { WeaponDef } from "./types";
 import { wrench } from "./wrench";
 
 export type * from "./types";
-export { chamberPistol, pistol, rocketLauncher, shotgun, wrench };
+export { afterburnFlame, chamberPistol, clusterBomblet, pistol, rocketLauncher, shotgun, wrench };
 
 /** Every weapon, by id. Adding a weapon = one file + one line here (DESIGN.md §7). */
 export const WEAPONS: Readonly<Record<string, WeaponDef>> = {
@@ -17,6 +18,8 @@ export const WEAPONS: Readonly<Record<string, WeaponDef>> = {
   [wrench.id]: wrench,
   [chamberPistol.id]: chamberPistol,
   [deadMansSwitchBlast.id]: deadMansSwitchBlast,
+  [clusterBomblet.id]: clusterBomblet,
+  [afterburnFlame.id]: afterburnFlame,
 };
 
 export function getWeapon(id: string): WeaponDef | undefined {

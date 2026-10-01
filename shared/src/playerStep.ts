@@ -1,11 +1,11 @@
 import { stepArms, type ArmsState } from "./arms";
-import { SPLIT_ROCKET_ANGLE } from "./constants";
+import { CLUSTER_COUNT, CLUSTER_RADIUS, SPLIT_ROCKET_ANGLE } from "./constants";
 import { DEFAULT_MODS, type PlayerMods } from "./rewires";
 import { stepPlayer } from "./movement";
 import { blastEffect, stepProjectile, type Projectile, type ProjectileTarget } from "./projectile";
 import { aimDirection, eyePosition } from "./raycast";
 import type { InputCmd, MapDef, PlayerMoveState, Vec3 } from "./types";
-import { getWeapon, type WeaponDef } from "./weapons";
+import { clusterBomblet, getWeapon, type WeaponDef } from "./weapons";
 
 /** Everything about a player that one input changes and the owning client predicts. */
 export interface PlayerSim {
@@ -99,13 +99,25 @@ export function stepInput(
     const weapon = getWeapon(p.weapon);
     if (!weapon) continue;
     const step = stepProjectile(p, weapon, map.boxes, opts.targets, cmd.dt);
-    if (step.explodedAt) explosions.push({ shotSeq: p.shotSeq, sub: p.sub ?? 0, weapon, point: step.explodedAt, direct: step.direct });
-    else next.push(step.projectile);
+    if (!step.explodedAt) {
+      next.push(step.projectile);
+      continue;
+    }
+    const sub = p.sub ?? 0;
+    explosions.push({ shotSeq: p.shotSeq, sub, weapon, point: step.explodedAt, direct: step.direct });
+    // Cluster Bomb: bomblets at fixed points around the impact, so the owner predicts them exactly.
+    if (mods.clusterBombs > 0) {
+      for (let k = 0; k < CLUSTER_COUNT; k++) {
+        const a = (k / CLUSTER_COUNT) * Math.PI * 2;
+        const point = { x: step.explodedAt.x + Math.cos(a) * CLUSTER_RADIUS, y: step.explodedAt.y, z: step.explodedAt.z + Math.sin(a) * CLUSTER_RADIUS };
+        explosions.push({ shotSeq: p.shotSeq, sub: 100 + sub * CLUSTER_COUNT + k, weapon: clusterBomblet, point, direct: null });
+      }
+    }
   }
 
   if (sim.alive) {
     for (const e of explosions) {
-      const blast = blastEffect(e.point, move.pos, e.weapon, map.boxes);
+      const blast = blastEffect(e.point, move.pos, e.weapon, map.boxes, mods.splashRadiusMul);
       if (blast) {
         const k = mods.selfKnockbackMul;
         move = applyImpulse(move, { x: blast.impulse.x * k, y: blast.impulse.y * k, z: blast.impulse.z * k });

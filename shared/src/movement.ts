@@ -1,6 +1,10 @@
 import { movePlayer } from "./collision";
 import {
+  ADRENALINE_SPEED_MUL,
   AIR_ACCEL,
+  DASH_COOLDOWN_MS,
+  DASH_LIFT,
+  DASH_SPEED,
   FRICTION,
   GRAVITY,
   GROUND_ACCEL,
@@ -12,7 +16,7 @@ import {
 import { DEFAULT_MODS, type PlayerMods } from "./rewires";
 import type { InputCmd, MapDef, PlayerMoveState, Vec3 } from "./types";
 
-export type MoveInput = Pick<InputCmd, "move" | "jump" | "yaw">;
+export type MoveInput = Pick<InputCmd, "move" | "jump" | "yaw"> & Partial<Pick<InputCmd, "altFire">>;
 
 /** Unit horizontal direction the player wants to move in, or zero. */
 export function wishDirection(input: MoveInput): { x: number; z: number } {
@@ -57,8 +61,12 @@ export function stepPlayer(
   const vel = { ...state.vel };
   const dir = wishDirection(input);
   const hasWish = dir.x !== 0 || dir.z !== 0;
-  const maxSpeed = MAX_SPEED * mods.moveSpeedMul;
+  const dtMs = dt * 1000;
+  const boostMs = Math.max(0, (state.boostMs ?? 0) - dtMs);
+  const maxSpeed = MAX_SPEED * mods.moveSpeedMul * ((state.boostMs ?? 0) > 0 ? ADRENALINE_SPEED_MUL : 1);
   let airJumpsUsed = state.airJumpsUsed ?? 0;
+  let dashCooldownMs = Math.max(0, (state.dashCooldownMs ?? 0) - dtMs);
+  const altFire = input.altFire ?? false;
 
   if (state.onGround) {
     applyFriction(vel, dt);
@@ -73,7 +81,17 @@ export function stepPlayer(
     }
   }
 
-  vel.y = Math.max(vel.y - GRAVITY * dt, -MAX_FALL_SPEED);
+  // Air Dash: a fresh alt-fire press flings you the way you're moving (or facing).
+  if (mods.airDashes > 0 && altFire && !state.altHeld && dashCooldownMs <= 0) {
+    const d = hasWish ? dir : wishDirection({ move: { x: 0, z: 1 }, jump: false, yaw: input.yaw });
+    vel.x = d.x * DASH_SPEED;
+    vel.z = d.z * DASH_SPEED;
+    vel.y = Math.max(vel.y, DASH_LIFT);
+    dashCooldownMs = DASH_COOLDOWN_MS;
+  }
+
+  const gravity = vel.y < 0 ? GRAVITY * mods.fallGravityMul : GRAVITY;
+  vel.y = Math.max(vel.y - gravity * dt, -MAX_FALL_SPEED);
 
   const { pos, hit } = movePlayer(state.pos, { x: vel.x * dt, y: vel.y * dt, z: vel.z * dt }, map.boxes);
 
@@ -83,5 +101,5 @@ export function stepPlayer(
   if (hit.y) vel.y = 0;
   if (onGround) airJumpsUsed = 0;
 
-  return { pos, vel, onGround, airJumpsUsed, jumpHeld: input.jump };
+  return { pos, vel, onGround, airJumpsUsed, jumpHeld: input.jump, dashCooldownMs, altHeld: altFire, boostMs };
 }

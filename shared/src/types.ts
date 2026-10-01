@@ -41,6 +41,12 @@ export interface PlayerMoveState {
   airJumpsUsed?: number;
   /** Whether jump was held last tick, so mid-air jumps need a fresh press. */
   jumpHeld?: boolean;
+  /** Air Dash cooldown left, ms. */
+  dashCooldownMs?: number;
+  /** Whether alt-fire was held last tick, so dashes need a fresh press. */
+  altHeld?: boolean;
+  /** Adrenaline speed boost left, ms. */
+  boostMs?: number;
 }
 
 export interface Box {

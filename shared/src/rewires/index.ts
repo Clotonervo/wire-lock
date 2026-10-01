@@ -19,6 +19,26 @@ export const REWIRES: Readonly<Record<string, RewireDef>> = Object.fromEntries(
     defs.vampire,
     defs.glassCannon,
     defs.deadMansSwitch,
+    defs.hollowPoints,
+    defs.magneticRounds,
+    defs.headhunter,
+    defs.pointBlank,
+    defs.longShot,
+    defs.executioner,
+    defs.afterburn,
+    defs.ricochet,
+    defs.bigBoom,
+    defs.clusterBomb,
+    defs.thickSkin,
+    defs.regenerator,
+    defs.secondWind,
+    defs.featherFall,
+    defs.airDash,
+    defs.adrenaline,
+    defs.scavenger,
+    defs.radar,
+    defs.copycat,
+    defs.gambler,
   ].map((r) => [r.id, r]),
 );
 
@@ -39,10 +59,37 @@ export const DEFAULT_MODS: Readonly<PlayerMods> = {
   selfBlastDamageMul: 1,
   selfKnockbackMul: 1,
   damageMul: 1,
+  aimAssistRad: 0,
+  headshotMul: 1,
+  pointBlankMul: 1,
+  longShotMul: 1,
+  executeMul: 1,
+  damageTakenMul: 1,
+  splashRadiusMul: 1,
+  fallGravityMul: 1,
+  airDashes: 0,
+  regenPerSec: 0,
+  secondWinds: 0,
+  afterburnDamage: 0,
+  ricochets: 0,
+  clusterBombs: 0,
+  radarRange: 0,
 };
 
 /** Additive fields; everything else multiplies. */
-const ADDITIVE: ReadonlySet<keyof PlayerMods> = new Set(["airJumps", "maxHealthAdd", "extraPellets"]);
+const ADDITIVE: ReadonlySet<keyof PlayerMods> = new Set([
+  "airJumps",
+  "maxHealthAdd",
+  "extraPellets",
+  "aimAssistRad",
+  "airDashes",
+  "regenPerSec",
+  "secondWinds",
+  "afterburnDamage",
+  "ricochets",
+  "clusterBombs",
+  "radarRange",
+]);
 
 /** Folds a player's Rewires (in pick order; repeats are stacks) into one set of mods. */
 export function foldMods(rewireIds: readonly string[]): PlayerMods {

@@ -6,7 +6,7 @@ import type { Vec3 } from "./types";
  */
 export interface ServerMessages {
   /** Someone else fired: draw their tracers (one per pellet; none for projectiles). Not sent to the shooter. */
-  fire: { shooter: string; weapon: string; ends: Vec3[] };
+  fire: { shooter: string; weapon: string; ends: Vec3[]; bounces?: { from: Vec3; to: Vec3 }[] };
   /** Sent to the shooter when a shot lands, for the hitmarker. */
   hit: { target: string; damage: number; killed: boolean };
   kill: { killer: string; victim: string; weapon: string };
@@ -17,6 +17,10 @@ export interface ServerMessages {
   explode: { owner: string; shotSeq: number; sub: number; weapon: string; pos: Vec3; tick: number };
   /** `player` reached a kill streak that banked a Rewire pick (DESIGN.md §8b.1). */
   streak: { player: string; kills: number };
+  /** Copycat copied `rewire` from `from` to `player`. */
+  copied: { player: string; from: string; rewire: string };
+  /** Second Wind saved `player` from a killing hit. */
+  secondWind: { player: string };
   roundStart: Record<string, never>;
   /** `winner` is a session id, or empty for a draw. */
   roundEnd: { winner: string };

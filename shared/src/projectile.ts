@@ -99,8 +99,14 @@ export interface BlastEffect {
  * knockback fall off linearly with distance to the player's box, and walls
  * block it. Null when out of range or out of sight.
  */
-export function blastEffect(center: Vec3, pos: Vec3, weapon: WeaponDef, boxes: readonly Box[]): BlastEffect | null {
-  const radius = weapon.projectile?.splashRadius ?? 0;
+export function blastEffect(
+  center: Vec3,
+  pos: Vec3,
+  weapon: WeaponDef,
+  boxes: readonly Box[],
+  radiusMul = 1,
+): BlastEffect | null {
+  const radius = (weapon.projectile?.splashRadius ?? 0) * radiusMul;
   if (radius <= 0) return null;
 
   const box = playerBox(pos);

@@ -51,3 +51,54 @@ export function rayBoxes(origin: Vec3, dir: Vec3, boxes: readonly Box[], maxDist
   }
   return nearest;
 }
+
+export interface RayHit {
+  dist: number;
+  /** Surface normal where the ray hit, or null if it hit nothing within range. */
+  normal: Vec3 | null;
+}
+
+/** Like rayBoxes, but also reports the face normal that was hit. */
+export function rayBoxesHit(origin: Vec3, dir: Vec3, boxes: readonly Box[], maxDist: number): RayHit {
+  let best: RayHit = { dist: maxDist, normal: null };
+  for (const b of boxes) {
+    let tMin = 0;
+    let tMax = best.dist;
+    let entryAxis: "x" | "y" | "z" | null = null;
+    let ok = true;
+    for (const axis of ["x", "y", "z"] as const) {
+      const o = origin[axis];
+      const d = dir[axis];
+      if (d === 0) {
+        if (o < b.min[axis] || o > b.max[axis]) {
+          ok = false;
+          break;
+        }
+        continue;
+      }
+      let t1 = (b.min[axis] - o) / d;
+      let t2 = (b.max[axis] - o) / d;
+      if (t1 > t2) [t1, t2] = [t2, t1];
+      if (t1 > tMin) {
+        tMin = t1;
+        entryAxis = axis;
+      }
+      tMax = Math.min(tMax, t2);
+      if (tMin > tMax) {
+        ok = false;
+        break;
+      }
+    }
+    if (!ok || entryAxis === null || tMin >= best.dist) continue;
+    const normal = { x: 0, y: 0, z: 0 };
+    normal[entryAxis] = dir[entryAxis] > 0 ? -1 : 1;
+    best = { dist: tMin, normal };
+  }
+  return best;
+}
+
+/** Mirror a direction off a surface. */
+export function reflect(dir: Vec3, normal: Vec3): Vec3 {
+  const d = dir.x * normal.x + dir.y * normal.y + dir.z * normal.z;
+  return { x: dir.x - 2 * d * normal.x, y: dir.y - 2 * d * normal.y, z: dir.z - 2 * d * normal.z };
+}

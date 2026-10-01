@@ -111,6 +111,32 @@ export const SPLIT_SHOT_SPREAD = 0.035;
 /** Horizontal angle between Split Shot's extra rockets (radians). */
 export const SPLIT_ROCKET_ANGLE = 0.08;
 
+// Rewire effects (v2). Each Rewire's own strength lives in its definition; these are the shared mechanics.
+/** Adrenaline's speed multiplier while boosted. */
+export const ADRENALINE_SPEED_MUL = 1.3;
+export const ADRENALINE_MS = 3000;
+/** Air Dash: horizontal speed, a little lift, and the cooldown. */
+export const DASH_SPEED = 16;
+export const DASH_LIFT = 3;
+export const DASH_COOLDOWN_MS = 3000;
+/** Hits at or above this fraction of body height are headshots (Headhunter). */
+export const HEADSHOT_FROM = 0.8;
+export const POINT_BLANK_RANGE = 6;
+export const LONG_SHOT_RANGE = 20;
+/** Executioner's bonus applies below this fraction of max health. */
+export const EXECUTE_BELOW = 0.35;
+/** Regenerator waits this long after taking damage. */
+export const REGEN_DELAY_MS = 3000;
+/** Afterburn's damage is dealt in this many pulses over AFTERBURN_MS. */
+export const AFTERBURN_MS = 3000;
+export const AFTERBURN_PULSES = 3;
+export const COPYCAT_CHANCE = 0.2;
+/** Ricochet: damage after the bounce. */
+export const RICOCHET_DAMAGE_MUL = 0.75;
+/** Cluster Bomb: bomblets around each rocket explosion, this far out. */
+export const CLUSTER_COUNT = 3;
+export const CLUSTER_RADIUS = 1.6;
+
 // --- Collision ---
 
 /** Gap kept between a player and the surfaces they touch, to avoid float-precision snagging. */
