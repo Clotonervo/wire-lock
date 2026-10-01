@@ -5,6 +5,7 @@
  *   --latency=<ms>     simulated round-trip latency (COLYSEUS_LATENCY also works)
  *   --kill-limit=<n>   override the mode's score limit, for quick test rounds
  *   --no-lag-comp      turn off hitscan lag compensation (to compare against)
+ *   --drop-interval=<s>  seconds between supply drops (default SUPPLY_DROP_INTERVAL_MS), for testing
  *   --rewires=a,b      give everyone these Rewires at the start of each round (testing; counts toward the cap)
  *   PORT               port to listen on (Render sets this)
  *   ALLOWED_ORIGINS    comma-separated web origins allowed to connect, e.g.
@@ -28,6 +29,7 @@ function listEnv(name: string): string[] | undefined {
 export const config = {
   latencyMs: numberFlag("latency"),
   killLimit: numberFlag("kill-limit"),
+  dropIntervalSec: numberFlag("drop-interval"),
   lagCompensation: !process.argv.includes("--no-lag-comp"),
   testRewires: process.argv.find((a) => a.startsWith("--rewires="))?.slice("--rewires=".length).split(",").filter(Boolean) ?? [],
   port: Number(process.env.PORT) || undefined,

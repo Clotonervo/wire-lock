@@ -26,6 +26,8 @@ import {
   reflect,
   shotPattern,
   slotForKey,
+  SUPPLY_DROP_FALL_MS,
+  SUPPLY_DROP_HEIGHT,
 } from "@wire-lock/shared";
 import type { InputCmd, InputStepResult, MapDef, PlayerMods, Projectile, ServerMessages, Vec3, WeaponDef } from "@wire-lock/shared";
 import type { Sfx, SoundName } from "./audio/sfx";
@@ -111,7 +113,7 @@ export class Game {
   /** Explosions from others, held until our delayed view of the world reaches them. */
   private pendingExplosions: { at: Vec3; weapon: string; t: number }[] = [];
   private shownOwnExplosions: string[] = [];
-  private pickups = new Map<string, PickupMesh>();
+  private pickups = new Map<string, { mesh: PickupMesh; falling: boolean }>();
   private wasAlive = false;
   /** Who we're watching while eliminated (spectator camera). */
   private spectating: string | null = null;
@@ -188,6 +190,14 @@ export class Game {
     this.listen("secondWind", (m) => {
       const mine = m.player === this.room.sessionId;
       this.ui.hud.addNote(`${mine ? "Your" : `${this.nameOf(m.player)}'s`} Second Wind kicked in!`, mine);
+    });
+    this.listen("supplyDrop", (m) => {
+      const name = getWeapon(m.weapon)?.name ?? m.weapon;
+      const me = this.predictor?.state.pos;
+      const dist = me ? Math.round(Math.hypot(m.pos.x - me.x, m.pos.z - me.z)) : undefined;
+      this.ui.hud.showBanner(`SUPPLY DROP · ${name}`, dist === undefined ? "Follow the beam" : `${dist} m away. Follow the beam`);
+      this.ui.hud.addNote(`Supply drop: ${name}`, false);
+      this.ui.sfx.play("supplyDrop");
     });
     this.listen("streak", (m) => {
       const mine = m.player === this.room.sessionId;
@@ -553,14 +563,27 @@ export class Game {
   }
 
   private renderPickups(now: number): void {
+    const serverNow = this.serverClock.now(now);
+    const seen = new Set<string>();
     this.room.state.pickups.forEach((p, key) => {
-      let mesh = this.pickups.get(key);
-      if (!mesh) {
-        mesh = new PickupMesh(this.view.scene, { x: p.x, y: p.y, z: p.z }, p.kind, p.weapon);
-        this.pickups.set(key, mesh);
+      seen.add(key);
+      let entry = this.pickups.get(key);
+      if (!entry) {
+        entry = { mesh: new PickupMesh(this.view.scene, { x: p.x, y: p.y, z: p.z }, p.kind, p.weapon, p.loose), falling: false };
+        this.pickups.set(key, entry);
       }
-      mesh.update(p.active, now / 1000);
+      // Supply drops fall in over SUPPLY_DROP_FALL_MS, landing on the server's tick.
+      const leftMs = serverNow === null || p.landTick === 0 ? 0 : p.landTick * TICK_MS - serverNow;
+      const fall = Math.max(0, Math.min(1, leftMs / SUPPLY_DROP_FALL_MS));
+      if (entry.falling && fall === 0) this.ui.sfx.play("dropLand", { x: p.x, y: p.y, z: p.z });
+      entry.falling = fall > 0;
+      entry.mesh.update(p.active, now / 1000, fall * fall * SUPPLY_DROP_HEIGHT);
     });
+    for (const [key, entry] of this.pickups) {
+      if (seen.has(key)) continue;
+      entry.mesh.dispose();
+      this.pickups.delete(key);
+    }
   }
 
   private renderOwnRockets(alpha: number): void {

@@ -86,6 +86,24 @@ export const HEALTH_PACK_HEAL = 50;
 export const PICKUP_RESPAWN_MS = 15_000;
 /** Weapon pickups (Deathmatch) come back more slowly than health. */
 export const WEAPON_PICKUP_RESPAWN_MS = 20_000;
+
+/** Supply drops (Deathmatch): a random weapon falls somewhere on the map this often, counted in round time. */
+export const SUPPLY_DROP_INTERVAL_MS = 30_000;
+/** How long a drop takes to fall (it can't be picked up until it lands), and from how high it's drawn. */
+export const SUPPLY_DROP_FALL_MS = 3000;
+export const SUPPLY_DROP_HEIGHT = 25;
+/** Which weapons drop, and how often relative to each other. */
+export const SUPPLY_DROP_WEIGHTS: Readonly<Record<string, number>> = { shotgun: 3, rocket: 2 };
+/** Loose weapons (supply drops and death drops) on the map at once; past this the oldest disappears. */
+export const MAX_LOOSE_WEAPONS = 10;
+/** Weapons dropped on death are spread this far apart so they don't stack. */
+export const DEATH_DROP_SPREAD = 0.8;
+/** Drop spots: tries, surfaces higher than this are skipped (pillar tops), and preferred distance from players. */
+export const DROP_SPOT_TRIES = 40;
+export const DROP_MAX_SURFACE_Y = 4.5;
+export const DROP_AVOID_PLAYERS = 6;
+/** The play area is the spawns' bounding box grown by this much. */
+export const DROP_BOUNDS_MARGIN = 3;
 export const PICKUP_RADIUS = 1;
 export const PICKUP_HEIGHT = 1.5;
 

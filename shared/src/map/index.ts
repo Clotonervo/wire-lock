@@ -5,6 +5,7 @@ import { testArena } from "./testArena";
 
 export { testArena };
 export { parseMapDef };
+export { findDropSpot, groundBelow, standsClear } from "./dropSpots";
 
 /** Maps can be TypeScript (like the test arena) or JSON files, validated on load. */
 export const scaffold: MapDef = parseMapDef(scaffoldJson);

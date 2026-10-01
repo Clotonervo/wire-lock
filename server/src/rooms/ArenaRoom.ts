@@ -10,7 +10,14 @@ import {
   MAX_ROOMS,
   MODES,
   INPUT_BACKLOG,
+  DEATH_DROP_SPREAD,
   KILL_Y,
+  MAX_LOOSE_WEAPONS,
+  SUPPLY_DROP_FALL_MS,
+  SUPPLY_DROP_INTERVAL_MS,
+  SUPPLY_DROP_WEIGHTS,
+  findDropSpot,
+  groundBelow,
   MAX_REWIRES_PER_ROUND,
   MAX_INPUTS_PER_TICK,
   MAX_INPUT_BATCH,
@@ -119,6 +126,11 @@ export class ArenaRoom extends Room<{ state: ArenaState }> {
   private shotSeed = 1;
   /** Tick each taken pickup comes back, by pickup key. */
   private pickupRespawn = new Map<string, number>();
+  /** Loose weapon pickup keys, oldest first (so the oldest goes when there are too many). */
+  private looseKeys: string[] = [];
+  private looseCounter = 0;
+  /** Round-time ticks until the next supply drop (only counts down while playing). */
+  private dropCountdown = 0;
   /** Round time left when the round was paused, in ticks (0 = untimed). */
   private pausedRemainingTicks = 0;
   private readonly history = new PositionHistory();
@@ -153,7 +165,7 @@ export class ArenaRoom extends Room<{ state: ArenaState }> {
     (map.pickups ?? []).forEach((p, i) => {
       // Weapon pickups only where the mode doesn't control loadouts itself.
       if (p.kind === "weapon" && !mode.def.weaponPickups) return;
-      const pickup = new PickupState({ kind: p.kind, weapon: p.weapon ?? "", x: p.pos.x, y: p.pos.y, z: p.pos.z, active: true });
+      const pickup = new PickupState({ kind: p.kind, weapon: p.weapon ?? "", x: p.pos.x, y: p.pos.y, z: p.pos.z, active: true, loose: false, landTick: 0 });
       this.state.pickups.set(String(i), pickup);
     });
     // Accumulator-based, so the long-run rate is exactly TICK_RATE_HZ (plain setInterval(33.3) drifts to ~29.4 Hz,
@@ -283,6 +295,7 @@ export class ArenaRoom extends Room<{ state: ArenaState }> {
     });
 
     this.tickPickups();
+    this.tickSupplyDrops();
     this.mode.onTick?.(this.modeRoom(), TICK_DT);
     this.updateRound();
 
@@ -469,6 +482,7 @@ export class ArenaRoom extends Room<{ state: ArenaState }> {
   private killPlayer(victimId: string, killerId: string | null, weaponId: string) {
     const victim = this.state.players.get(victimId);
     if (!victim?.alive) return;
+    if (weaponId !== WORLD_KILL) this.dropWeapons(victimId, victim);
     victim.alive = false;
     victim.health = 0;
     victim.respawnTick = this.state.tick + Math.ceil(this.mode.def.respawnDelayMs / TICK_MS);
@@ -625,6 +639,9 @@ export class ArenaRoom extends Room<{ state: ArenaState }> {
     const roundTime = this.mode.def.roundTimeSec;
     s.phaseEndTick = roundTime ? s.tick + Math.round(roundTime * TICK_RATE_HZ) : 0;
     s.projectiles.clear();
+    for (const key of this.looseKeys) s.pickups.delete(key);
+    this.looseKeys = [];
+    this.dropCountdown = dropIntervalTicks();
     s.pickups.forEach((p) => (p.active = true));
     this.pickupRespawn.clear();
     const draft = !!this.mode.def.rewires;
@@ -761,7 +778,9 @@ export class ArenaRoom extends Room<{ state: ArenaState }> {
   /** Pickups: whoever touches one and can use it takes it; it comes back later. */
   private tickPickups() {
     const tick = this.state.tick;
+    const taken: string[] = [];
     this.state.pickups.forEach((pickup, key) => {
+      if (tick < pickup.landTick) return; // still falling
       if (!pickup.active) {
         if (tick >= (this.pickupRespawn.get(key) ?? 0)) pickup.active = true;
         return;
@@ -772,12 +791,59 @@ export class ArenaRoom extends Room<{ state: ArenaState }> {
         if (Math.hypot(p.x - pickup.x, p.z - pickup.z) > PICKUP_RADIUS || dy < -0.5 || dy > PICKUP_HEIGHT) continue;
         if (!this.applyPickup(p, pickup)) continue;
         pickup.active = false;
+        if (pickup.loose) taken.push(key);
         const respawnMs = pickup.kind === "weapon" ? WEAPON_PICKUP_RESPAWN_MS : PICKUP_RESPAWN_MS;
         this.pickupRespawn.set(key, tick + Math.round(respawnMs / TICK_MS));
         this.broadcastEvent("pickup", { player: id, kind: pickup.kind, pos: { x: pickup.x, y: pickup.y, z: pickup.z } });
         break;
       }
     });
+    for (const key of taken) this.removeLoose(key);
+  }
+
+  /** Supply drops (Deathmatch): every SUPPLY_DROP_INTERVAL_MS of round time, a random weapon falls somewhere. */
+  private tickSupplyDrops() {
+    if (!this.mode.def.weaponPickups || this.state.phase !== "playing") return;
+    if (--this.dropCountdown > 0) return;
+    this.dropCountdown = dropIntervalTicks();
+    const players: { x: number; y: number; z: number }[] = [];
+    this.state.players.forEach((p) => {
+      if (p.alive) players.push({ x: p.x, y: p.y, z: p.z });
+    });
+    const spot = findDropSpot(this.map, Math.random, players);
+    if (!spot) return;
+    const weapon = pickWeighted(SUPPLY_DROP_WEIGHTS);
+    this.addLoose(weapon, spot, this.state.tick + Math.round(SUPPLY_DROP_FALL_MS / TICK_MS));
+    this.broadcastEvent("supplyDrop", { weapon, pos: spot });
+    log("supply.drop", { roomId: this.roomId, weapon, x: spot.x.toFixed(1), z: spot.z.toFixed(1) });
+  }
+
+  /** Death drops: weapons the victim picked up (beyond the mode's loadout) fall where they died. */
+  private dropWeapons(id: string, p: PlayerState) {
+    if (!this.mode.def.weaponPickups) return;
+    const base = new Set(this.mode.loadout(this.modeRoom(), id));
+    const extra = p.weapons.toArray().filter((w) => !base.has(w));
+    extra.forEach((weapon, i) => {
+      const x = p.x + (i - (extra.length - 1) / 2) * DEATH_DROP_SPREAD;
+      const y = groundBelow(this.map, { x, y: p.y + 0.5, z: p.z });
+      if (y !== null) this.addLoose(weapon, { x, y, z: p.z }, 0);
+    });
+  }
+
+  private addLoose(weapon: string, pos: { x: number; y: number; z: number }, landTick: number) {
+    const key = `loose-${++this.looseCounter}`;
+    const pickup = new PickupState({ kind: "weapon", weapon, x: pos.x, y: pos.y, z: pos.z, active: true, loose: true, landTick });
+    this.state.pickups.set(key, pickup);
+    this.looseKeys.push(key);
+    while (this.looseKeys.length > MAX_LOOSE_WEAPONS) {
+      const oldest = this.looseKeys[0];
+      if (oldest !== undefined) this.removeLoose(oldest);
+    }
+  }
+
+  private removeLoose(key: string) {
+    this.state.pickups.delete(key);
+    this.looseKeys = this.looseKeys.filter((k) => k !== key);
   }
 
   /** Gives `p` what the pickup holds; false if they can't use it (full health, weapon already full). */
@@ -1022,4 +1088,19 @@ function writeArms(p: PlayerState, a: ArmsState) {
   p.cooldownMs = a.cooldownMs;
   p.reloadMs = a.reloadMs;
   p.weapon = a.slots[a.current] ?? "";
+}
+
+/** Picks a key with probability proportional to its weight. */
+function pickWeighted(weights: Readonly<Record<string, number>>): string {
+  const entries = Object.entries(weights);
+  let r = Math.random() * entries.reduce((n, [, w]) => n + w, 0);
+  for (const [key, w] of entries) {
+    r -= w;
+    if (r < 0) return key;
+  }
+  return entries[entries.length - 1]?.[0] ?? "";
+}
+
+function dropIntervalTicks(): number {
+  return Math.round((config.dropIntervalSec ? config.dropIntervalSec * 1000 : SUPPLY_DROP_INTERVAL_MS) / TICK_MS);
 }

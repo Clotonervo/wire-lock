@@ -16,6 +16,12 @@ const RING_RADIUS = 0.55;
 const RING_OPACITY = 0.45;
 const RING_LIFT = 0.03;
 const RING_COLOR = 0xffc94d;
+/** Loose weapons (supply and death drops) get a tall beam so you can find them from across the map. */
+const BEAM_HEIGHT = 40;
+const BEAM_RADIUS = 0.22;
+const BEAM_OPACITY = 0.6;
+const BEAM_PULSE = 0.2;
+const BEAM_PULSE_SPEED = 4;
 
 /**
  * A map pickup, hidden while it's respawning: a floating, spinning green cross
@@ -24,11 +30,12 @@ const RING_COLOR = 0xffc94d;
 export class PickupMesh {
   readonly root = new THREE.Group();
   private readonly spinner = new THREE.Group();
+  private readonly beam: THREE.Mesh<THREE.CylinderGeometry, THREE.MeshBasicMaterial> | null = null;
   private static crossMaterial = new THREE.MeshBasicMaterial({ color: CROSS_COLOR });
   private static vertical = new THREE.BoxGeometry(BAR_SHORT, BAR_LONG, BAR_SHORT);
   private static horizontal = new THREE.BoxGeometry(BAR_LONG, BAR_SHORT, BAR_SHORT);
 
-  constructor(scene: THREE.Scene, pos: Vec3, kind: string, weaponId: string) {
+  constructor(scene: THREE.Scene, pos: Vec3, kind: string, weaponId: string, loose = false) {
     if (kind === "weapon") {
       const w = getWeapon(weaponId);
       const model = buildWeaponModel(w?.view.model, w?.view.color);
@@ -42,6 +49,14 @@ export class PickupMesh {
       ring.rotation.x = -Math.PI / 2;
       ring.position.y = RING_LIFT;
       this.root.add(ring);
+      if (loose) {
+        this.beam = new THREE.Mesh(
+          new THREE.CylinderGeometry(BEAM_RADIUS, BEAM_RADIUS, BEAM_HEIGHT, 8, 1, true),
+          new THREE.MeshBasicMaterial({ color: RING_COLOR, transparent: true, opacity: BEAM_OPACITY, depthWrite: false }),
+        );
+        this.beam.position.y = BEAM_HEIGHT / 2;
+        this.root.add(this.beam);
+      }
     } else {
       this.spinner.add(new THREE.Mesh(PickupMesh.vertical, PickupMesh.crossMaterial), new THREE.Mesh(PickupMesh.horizontal, PickupMesh.crossMaterial));
     }
@@ -50,14 +65,22 @@ export class PickupMesh {
     scene.add(this.root);
   }
 
-  update(active: boolean, timeSec: number): void {
+  /** `fallHeight`: how far above its landing spot a supply drop still is (0 once landed). */
+  update(active: boolean, timeSec: number, fallHeight = 0): void {
     this.root.visible = active;
     if (!active) return;
     this.spinner.rotation.y = timeSec * SPIN_SPEED;
-    this.spinner.position.y = FLOAT_HEIGHT + Math.sin(timeSec * BOB_SPEED) * BOB_HEIGHT;
+    this.spinner.position.y = FLOAT_HEIGHT + fallHeight + (fallHeight > 0 ? 0 : Math.sin(timeSec * BOB_SPEED) * BOB_HEIGHT);
+    if (this.beam) this.beam.material.opacity = BEAM_OPACITY + Math.sin(timeSec * BEAM_PULSE_SPEED) * BEAM_PULSE;
   }
 
   dispose(): void {
+    this.root.traverse((o) => {
+      // The cross's geometry and material are shared between health packs; everything else is ours.
+      if (!(o instanceof THREE.Mesh) || o.material === PickupMesh.crossMaterial) return;
+      o.geometry.dispose();
+      (o.material as THREE.Material).dispose();
+    });
     this.root.removeFromParent();
   }
 }

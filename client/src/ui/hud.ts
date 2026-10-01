@@ -27,6 +27,9 @@ export interface HudView {
   centerSub: string;
 }
 
+/** How long a banner announcement stays up. */
+const BANNER_MS = 4000;
+
 /** In-game HUD (DESIGN.md §9.3). Plain DOM; every player-supplied string is set as text, never HTML. */
 export class Hud {
   private readonly health = el("div", "hud-health");
@@ -39,6 +42,10 @@ export class Hud {
   private slotsKey = "";
   private readonly round = el("div", "hud-round");
   private readonly roundSub = el("div", "hud-round-sub");
+  private readonly banner = el("div", "hud-banner");
+  private readonly bannerTitle = el("div", "hud-banner-title");
+  private readonly bannerSub = el("div", "hud-banner-sub");
+  private bannerTimer: number | undefined;
   private readonly feed = el("ul", "hud-feed");
   private readonly center = el("div", "hud-center");
   private readonly centerSub = el("div", "hud-center-sub");
@@ -51,7 +58,8 @@ export class Hud {
   constructor(root: HTMLElement) {
     this.weapon.append(this.weaponName, this.ammo);
     const top = el("div", "hud-top");
-    top.append(this.round, this.roundSub);
+    this.banner.append(this.bannerTitle, this.bannerSub);
+    top.append(this.round, this.roundSub, this.banner);
     const middle = el("div", "hud-middle");
     middle.append(this.center, this.centerSub);
     root.append(this.tracked, this.damage, top, this.feed, middle, this.rewires, this.lives, this.health, this.slots, this.weapon);
@@ -88,6 +96,17 @@ export class Hud {
     this.feed.prepend(item);
     while (this.feed.children.length > FEED_SIZE) this.feed.lastElementChild?.remove();
     window.setTimeout(() => item.remove(), FEED_MS);
+  }
+
+  /** A big announcement under the round timer (e.g. a supply drop), shown for a few seconds. */
+  showBanner(title: string, sub: string): void {
+    this.bannerTitle.textContent = title;
+    this.bannerSub.textContent = sub;
+    this.banner.classList.remove("show");
+    void this.banner.offsetWidth; // restart the animation
+    this.banner.classList.add("show");
+    window.clearTimeout(this.bannerTimer);
+    this.bannerTimer = window.setTimeout(() => this.banner.classList.remove("show"), BANNER_MS);
   }
 
   /** A one-line announcement in the kill feed (e.g. a streak). */

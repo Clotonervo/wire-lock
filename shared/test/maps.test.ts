@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { COLLISION_SKIN, MAPS, getWeapon, TICK_DT, boxesOverlap, parseMapDef, playerBox, scaffold, stepPlayer } from "../src";
+import { COLLISION_SKIN, DROP_AVOID_PLAYERS, DROP_MAX_SURFACE_Y, MAPS, findDropSpot, getWeapon, groundBelow, seededRng, standsClear, TICK_DT, boxesOverlap, parseMapDef, playerBox, scaffold, stepPlayer } from "../src";
 import type { MoveInput, PlayerMoveState } from "../src";
 
 const idle: MoveInput = { move: { x: 0, z: 0 }, jump: false, yaw: 0 };
@@ -70,5 +70,39 @@ describe.each(Object.values(MAPS))("map $name weapon pickups", (map) => {
       if (p.kind !== "weapon") continue;
       expect(getWeapon(p.weapon ?? "")?.slotKey).toBeDefined();
     }
+  });
+});
+
+describe.each(Object.values(MAPS))("map $name supply drop spots", (map) => {
+  it("are always standing room on something reachable", () => {
+    const random = seededRng(42);
+    for (let i = 0; i < 200; i++) {
+      const spot = findDropSpot(map, random);
+      expect(spot).not.toBeNull();
+      if (!spot) continue;
+      expect(standsClear(map, spot)).toBe(true);
+      expect(spot.y).toBeLessThanOrEqual(DROP_MAX_SURFACE_Y);
+      // Something solid right under it: standing there, you stay put.
+      let st: PlayerMoveState = { pos: { ...spot, y: spot.y + COLLISION_SKIN }, vel: { x: 0, y: 0, z: 0 }, onGround: false };
+      for (let k = 0; k < 10; k++) st = stepPlayer(st, idle, map, TICK_DT);
+      expect(st.onGround).toBe(true);
+      expect(Math.abs(st.pos.y - spot.y)).toBeLessThan(0.05);
+    }
+  });
+
+  it("keep away from players when there's room", () => {
+    const random = seededRng(7);
+    const avoid = map.spawns.map((s) => s.pos);
+    for (let i = 0; i < 50; i++) {
+      const spot = findDropSpot(map, random, avoid);
+      expect(spot && avoid.every((p) => Math.hypot(p.x - spot.x, p.z - spot.z) >= DROP_AVOID_PLAYERS)).toBe(true);
+    }
+  });
+});
+
+describe("groundBelow", () => {
+  it("finds Scaffold's platform top and the floor", () => {
+    expect(groundBelow(scaffold, { x: 0, y: 10, z: 18 })).toBeCloseTo(4);
+    expect(groundBelow(scaffold, { x: 10, y: 10, z: 0 })).toBeCloseTo(0);
   });
 });

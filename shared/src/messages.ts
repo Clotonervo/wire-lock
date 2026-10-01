@@ -24,6 +24,8 @@ export interface ServerMessages {
   /** Second Wind saved `player` from a killing hit. */
   secondWind: { player: string };
   roundStart: Record<string, never>;
+  /** A supply drop is on its way: `weapon` lands at `pos` in SUPPLY_DROP_FALL_MS. */
+  supplyDrop: { weapon: string; pos: Vec3 };
   /** `winner` is a session id, or empty for a draw. */
   roundEnd: { winner: string };
 }

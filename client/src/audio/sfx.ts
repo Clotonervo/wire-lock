@@ -13,7 +13,9 @@ export type SoundName =
   | "melee"
   | "heal"
   | "pad"
-  | "weaponPickup";
+  | "weaponPickup"
+  | "supplyDrop"
+  | "dropLand";
 
 const MUTE_KEY = "wire-lock.muted";
 const DEFAULT_VOLUME = 0.5;
@@ -125,6 +127,17 @@ export class Sfx {
         this.noiseBurst(out, t, { type: "bandpass", freq: 2200, q: 3 }, 0.35, 0.04);
         this.noiseBurst(out, t + 0.09, { type: "bandpass", freq: 1500, q: 3 }, 0.4, 0.05);
         this.tone(out, t + 0.09, "square", 140, 90, 0.12, 0.06);
+        break;
+      case "supplyDrop":
+        // Two-tone alarm, so everyone looks up.
+        for (let i = 0; i < 3; i++) {
+          this.tone(out, t + i * 0.3, "square", 880, 880, 0.18, 0.14);
+          this.tone(out, t + i * 0.3 + 0.15, "square", 660, 660, 0.18, 0.14);
+        }
+        break;
+      case "dropLand":
+        this.noiseBurst(out, t, { type: "lowpass", freq: 500, freqEnd: 120, q: 0.8 }, 0.8, 0.35);
+        this.tone(out, t, "sine", 90, 40, 0.7, 0.3);
         break;
       case "pad":
         this.tone(out, t, "triangle", 180, 720, 0.4, 0.3);

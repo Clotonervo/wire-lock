@@ -90,6 +90,10 @@ export const PickupState = schema(
     y: t.float64(),
     z: t.float64(),
     active: t.boolean(),
+    /** Supply drops and death drops: taken once, never respawn. */
+    loose: t.boolean(),
+    /** Supply drops: the tick it lands (can't be picked up before). 0 for everything else. */
+    landTick: t.uint32(),
   },
   "PickupState",
 );

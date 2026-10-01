@@ -197,6 +197,12 @@ interface MapDef {
 - **Jump pads** are part of `stepPlayer`, so they're predicted. Touching one while not already rising (`PAD_REARM_VY`) sets your velocity to its `launch`. Scaffold's four pads each land you on a platform (tested).
 - **Health packs** are server-side: `HEALTH_PACK_HEAL` (50) to a hurt player within `PICKUP_RADIUS`, back after `PICKUP_RESPAWN_MS` (15 s). They are synced as `state.pickups` and reset each round.
 - **Weapon pickups** (`kind: "weapon"`, `weapon: <id>`) are only in play in modes with `weaponPickups` (Deathmatch). Touching one either adds the weapon (full magazine, switched to) or refills it if you already have it (`giveWeapon` in `shared/src/arms.ts`). If neither applies, the pickup stays put. They come back after `WEAPON_PICKUP_RESPAWN_MS` (20 s). Scaffold has a rocket launcher on the middle of the bridge and a shotgun on each side ledge; Test Arena has the rocket launcher on the centre platform and two shotguns on the floor.
+- **Supply drops** (modes with `weaponPickups`): every `SUPPLY_DROP_INTERVAL_MS` (30 s) of round time, which pauses with the round, the server picks a weapon (`SUPPLY_DROP_WEIGHTS`: shotgun 3, rocket 2) and a spot from `findDropSpot` (`shared/src/map/dropSpots.ts`).
+  - The spot is random within the spawns' bounding box, on top of whatever is there (floor, platform, bridge, but not pillar tops above `DROP_MAX_SURFACE_Y`), clear of geometry and jump pads, and preferably `DROP_AVOID_PLAYERS` (6 m) from any living player.
+  - Everyone gets a `supplyDrop` event: a banner under the timer ("SUPPLY DROP · Rocket Launcher, 23 m away"), a feed note and an alarm.
+  - The weapon falls for `SUPPLY_DROP_FALL_MS` (3 s; `landTick` is synced and the client animates against the server clock), can't be taken until it lands, and thuds when it does.
+- **Death drops:** when you die (except by falling out of the world), every weapon you have beyond the mode's loadout falls to the ground under where you died, spread `DEATH_DROP_SPREAD` apart. So picked-up weapons stay in circulation.
+- Supply and death drops are **loose** pickups: a tall pulsing gold beam marks them, they're removed once taken (no respawn), and they never expire. At most `MAX_LOOSE_WEAPONS` (10) can be on the map (the oldest goes first), and they're cleared at round start.
 - Collision is swept AABB-vs-AABB, resolved axis by axis. The client builds meshes from the same data.
 - Keep maps small (arena-sized) and blocky.
 

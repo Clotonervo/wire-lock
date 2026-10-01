@@ -11,7 +11,7 @@ Requires Node 24+ and pnpm (`npm i -g pnpm`).
 - `pnpm install` — install all workspace deps
 - `pnpm dev` — server (`ws://localhost:2567`, tsx watch) + client (`http://localhost:5173`, Vite) together
 - `pnpm dev:lag` — same, with 150 ms simulated round-trip latency (server `--latency=<ms>` flag)
-- Server dev flags (after `tsx src/index.ts`): `--latency=<ms>`, `--kill-limit=<n>` for short test rounds, `--no-lag-comp` to compare hit registration without lag compensation. `--rewires=overclock,air-dash` gives everyone those Rewires each round (for testing specific ones). `PORT` env var changes the port.
+- Server dev flags (after `tsx src/index.ts`): `--latency=<ms>`, `--kill-limit=<n>` for short test rounds, `--no-lag-comp` to compare hit registration without lag compensation. `--drop-interval=5` makes supply drops come every 5 s. `--rewires=overclock,air-dash` gives everyone those Rewires each round (for testing specific ones). `PORT` env var changes the port.
 - `GET /health` returns `{ok, commit, rooms, players, tickMs: {avg, p95, max}}`; use it to check server CPU headroom (tick budget is 33 ms).
 - Maps: add a JSON file in `shared/src/map/`, parse it with `parseMapDef` in `map/index.ts`, and register it in `MAPS`. `maps.test.ts` checks spawns and pickups for every registered map automatically.
 - Client: the lobby asks for a name (remembered in localStorage). `?room=CODE` opens straight to joining that room.

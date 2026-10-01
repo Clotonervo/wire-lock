@@ -78,6 +78,8 @@ export interface PickupView {
   y: number;
   z: number;
   active: boolean;
+  loose: boolean;
+  landTick: number;
 }
 
 export type RoundPhase = "waiting" | "playing" | "paused" | "ended";
