@@ -447,7 +447,8 @@ Each milestone should end with the game in a runnable state and the acceptance c
 - Rewire framework (§8b): definitions + registry, `PlayerMods` folded into the shared simulation, server-rolled offers, a starting pick each round, a pick every 2nd death plus streak-banked picks, spawning that waits for picks, round cap and reset.
 - Respawn-screen pick cards, HUD list, scoreboard, streak announcements.
 - The v1 set of 10 Rewires (§8b.3), Deathmatch only.
-- ✅ In a live Deathmatch, players pick Rewires while respawning; movement/firing Rewires predict with zero correction; a round with several Rewires each is playable and fun enough to want another.
+- ✅ **Built** (live playtest pending). In a live Deathmatch, players pick Rewires while respawning; movement/firing Rewires predict with zero correction; a round with several Rewires each is playable and fun enough to want another.
+- Verified locally: draft before first spawn, picks on every 2nd death, streak-banked pick delivered on a 1st death, spawn held until picked, and 0 prediction mismatches in 244 checks with Hair Trigger + Split Shot (including split rockets).
 
 ### M6+ — Silly stuff (open-ended)
 - Work through the silly weapons and modes backlog.
