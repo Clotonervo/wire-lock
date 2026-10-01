@@ -13,6 +13,7 @@ A small, silly, multiplayer first-person shooter that runs in the browser. Built
 - Real-time multiplayer for small rooms (2–8 players).
 - Movement that feels responsive despite network latency.
 - Weapons and game modes defined in a data-driven way so new ones are small, isolated additions.
+- **What makes it Wire Lock:** Rewires (§8b), in-round build-crafting picked on death, so every round plays differently.
 - Simple, cheap hosting: static client on Vercel, game server on a small container host.
 
 **Non-goals (for now)**
@@ -269,6 +270,109 @@ The mode is chosen when a room is created (a query param or lobby option) and is
 
 ---
 
+## 8b. Rewires (augments)
+
+Rewires are what make Wire Lock different from other silly shooters. Inspired by ARAM Mayhem's augments, they give players **build-crafting inside a 5-minute round**: every round you assemble a different, often ridiculous, combination of upgrades. Dying becomes a moment of choice instead of dead time.
+
+### 8b.1 Rules
+
+- **On in Deathmatch only** for now (`ModeDef.rewires: true`). Gun Game and One in the Chamber stay pure, since bonus bullets would break One in the Chamber.
+- **You earn a pick every time you die.** It's offered on the respawn screen as *choose 1 of 3*. This doubles as catch-up: losing players get stronger, which damps snowballing.
+- **Kill streaks bank extra picks.** Every `REWIRE_STREAK_KILLS` (3) kills without dying banks one extra pick, so kills 3, 6, 9… each bank one. Banked picks aren't offered mid-fight; they're offered **at your next death**, one after another on the same respawn screen. The kill feed announces the streak.
+- **The respawn timer never waits.** If it runs out while picks are still pending, each remaining offer is resolved by picking one of its three at random. You never lose a pick, and you never stall the game.
+- **Rewires last for the round.** They reset when a new round starts. None are earned during warm-up or on the end-of-round screen.
+- **Cap:** at most `MAX_REWIRES_PER_ROUND` (6) per player per round. After that, deaths don't offer more, and the streak still shows in the kill feed for bragging rights. A first-to-20 Deathmatch can involve a lot of deaths, so without a cap builds would get absurd. The cap is the first tunable to revisit after playtesting.
+- **Offers:**
+  - Each offer is 3 distinct Rewires, rolled by the **server** (seeded RNG) and weighted by rarity.
+  - A Rewire you already own isn't offered again unless it's stackable and below its stack limit.
+  - The client can only choose from the offer the server sent.
+- **Rarity:** common (most picks: solid stat boosts), rare (changes how you play), wild (chaos and trade-offs). The offer weights are tunable constants.
+
+### 8b.2 Definitions
+
+Rewires are **data plus optional hooks**, like weapons (§7). Each is one file in `shared/src/rewires/` plus one registry line.
+
+```ts
+interface RewireDef {
+  id: string;
+  name: string;
+  description: string;           // one line, shown on the pick card
+  rarity: "common" | "rare" | "wild";
+  maxStacks?: number;            // default 1
+  /** Changes to shared simulation (applied per stack). Read by movement/arms/stepInput. */
+  mods?: Partial<PlayerMods>;
+  /** Server-only effects. Same narrow API style as weapon hooks; never touch Colyseus directly. */
+  onDealDamage?: (ctx: DamageContext) => number;   // return modified damage
+  onKill?: (ctx: KillContext) => void;
+  onDeath?: (ctx: DeathContext) => void;
+}
+
+/** Folded from a player's Rewires; all multipliers default to 1 and additions to 0. */
+interface PlayerMods {
+  moveSpeedMul: number;
+  jumpCount: number;             // extra mid-air jumps
+  airAccelMul: number;
+  maxHealthAdd: number;
+  maxHealthMul: number;
+  fireIntervalMul: number;       // < 1 = faster
+  magazineMul: number;
+  reloadMul: number;
+  extraPellets: number;          // +N rays/projectiles per shot, with a little spread
+  selfBlastDamageMul: number;
+  splashRadiusMul: number;
+}
+```
+
+**The prediction rule** (the important bit): anything that changes **movement or firing** must be a `mods` field read by the shared simulation (`stepPlayer`, `stepArms`, `stepInput`). That keeps client prediction exact, so a speed boost feels instant and never corrects. Concretely:
+- The player's owned Rewire ids are synced in `PlayerState.rewires`.
+- Both sides fold them into `PlayerMods` the same way.
+- `PlayerSim` carries those mods through every step.
+
+Effects only the server needs (damage multipliers, heal on kill, explode on death) use server hooks.
+
+### 8b.3 First set (v1)
+
+| Rewire | Rarity | Effect | Kind |
+|---|---|---|---|
+| Overclock | common | +25% move speed | mods |
+| Plating | common | +40 max health | mods |
+| Hair Trigger | common | Weapons fire 25% faster | mods |
+| Deep Mags | common | +50% magazine size, reload 25% faster | mods |
+| Split Shot | rare | +1 bullet (or rocket) per shot, slightly spread | mods |
+| Spring Heels | rare | Double jump | mods |
+| Blast Shield | rare | No damage from your own explosions, and +50% rocket-jump knockback | mods |
+| Vampire | rare | Heal 25 on each kill | server hook |
+| Glass Cannon | wild | Deal double damage, half max health | mods + server hook |
+| Dead Man's Switch | wild | Explode when you die, damaging those nearby | server hook |
+
+**Later ideas:**
+- **Needs engine work:** Tiny and Giant (player size), Moon Boots (personal low gravity).
+- **Projectile and bullet behaviour:** Bouncy Bullets, Homing Rockets, Ricochet.
+- **Wild:** Shield Bubble, "every 10th shot is a rocket".
+
+### 8b.4 Networking and UI
+
+- **State:**
+  - `PlayerState.rewires` (owned ids, in pick order) and `PlayerState.pendingPicks` (count) are synced.
+  - The current offer goes **only to its owner**, as a `rewireOffer` message (`{ options: string[] }`).
+  - The player answers with a `pickRewire` message (`{ id }`), which the server validates against the outstanding offer.
+- **Respawn screen:** when you're dead with picks pending, the centre shows three cards (name, rarity colour, one-line description). You choose with a click or keys **1/2/3** (weapon-slot keys aren't needed while dead). The kill/respawn text moves above the cards.
+- **HUD:** your Rewires show as a compact list near the health readout.
+- **Scoreboard:** everyone's Rewires are listed, so players know who to fear.
+- **Kill feed:** shows "X is on a streak!" when a pick is banked.
+
+### 8b.5 Tunables (first guesses, revisit after playtesting)
+
+`REWIRE_STREAK_KILLS = 3`, `MAX_REWIRES_PER_ROUND = 6`, `REWIRE_OFFER_SIZE = 3`, and rarity weights common 60 / rare 30 / wild 10.
+
+### 8b.6 Open questions
+
+- Is a pick on *every* death too many even with the cap? Alternatives: every 2nd death, or a cap of 4.
+- Should rarer Rewires become more likely later in the round, as in ARAM Mayhem's later picks?
+- Overhead icons for others' Rewires, or the scoreboard only?
+
+---
+
 ## 9. Client
 
 ### 9.1 Rendering (Three.js)
@@ -336,7 +440,13 @@ Each milestone should end with the game in a runnable state and the acceptance c
 - Order: rooms and deploy first (with Deathmatch), then the two modes, tested on the live deployment.
 - ✅ A friend can open a link and join a room on the live deployment. Deployed at https://game.samhopkins.dev; all three modes playable.
 
-### M5+ — Silly stuff (open-ended)
+### M5 — Rewires
+- Rewire framework (§8b): definitions + registry, `PlayerMods` folded into the shared simulation, server-rolled offers, picks on death plus streak-banked picks, round cap and reset.
+- Respawn-screen pick cards, HUD list, scoreboard, streak announcements.
+- The v1 set of 10 Rewires (§8b.3), Deathmatch only.
+- ✅ In a live Deathmatch, players pick Rewires while respawning; movement/firing Rewires predict with zero correction; a round with several Rewires each is playable and fun enough to want another.
+
+### M6+ — Silly stuff (open-ended)
 - Work through the silly weapons and modes backlog.
 - Pickups (health, weapon spawns), jump pads.
 - ~~Lag compensation for hitscan.~~ Done (§5.5).
